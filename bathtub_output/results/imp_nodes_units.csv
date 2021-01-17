@@ -1,0 +1,19 @@
+name,type
+edgeID,dbl
+start_end,chr
+nodeID,int
+elev,[ft]
+inv_elev,[ft]
+structureID,int
+s_inv_elev,[ft]
+min_inv_elev,[ft]
+interp,chr
+alt_edgeID,list
+geometry,POINT [US_survey_foot]
+z_min,dbl
+outlet,lgl
+node_fill_height,[ft]
+node_perc_fill,[1]
+confidence,dbl
+confidence_class,chr
+water_elevation,[ft]
