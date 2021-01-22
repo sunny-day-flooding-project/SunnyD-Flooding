@@ -23,7 +23,7 @@ library(plotly)
 place_names <- c("Beaufort, North Carolina", "Carolina Beach, North Carolina")
 
 # Boundaries of locations listed in "place_names"
-urban_boundaries <- sf::st_read("merged_boundaries_coast.shp") %>%
+urban_boundaries <- sf::st_read("data/merged_boundaries_coast.shp") %>%
     sf::st_make_valid() %>%
     sf::st_cast("POLYGON") %>%
     mutate(place = paste0(Place_Name,", ",State_Name)) %>% 
