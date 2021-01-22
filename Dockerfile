@@ -7,7 +7,7 @@ RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libxml2-dev \
     libcairo2-dev \
     libsqlite3-dev \
-    libmariadbd-dev \
+    ## libmariadbd-dev \
     libpq-dev \
     libssh2-1-dev \
     unixodbc-dev \
