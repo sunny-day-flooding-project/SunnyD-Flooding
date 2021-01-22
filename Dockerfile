@@ -1,5 +1,5 @@
 # Base image https://hub.docker.com/u/rocker/
-FROM rocker/shiny:latest
+FROM dukegcb/openshift-shiny-verse:4.0.2
 
 # system libraries of general use
 ## install debian packages
