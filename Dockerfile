@@ -1,38 +1,33 @@
 # Base image https://hub.docker.com/u/rocker/
-FROM dukegcb/openshift-shiny-verse:4.0.2
+# FROM dukegcb/openshift-shiny-verse:4.0.2
+FROM rocker/shiny-verse:latest
 
-# system libraries of general use
-## install debian packages
-RUN apt-get update -qq && apt-get -y --no-install-recommends install \
-    libxml2-dev \
-    libcairo2-dev \
-    libsqlite3-dev \
-    # libmariadbd-dev \
-    libpq-dev \
-    libssh2-1-dev \
-    unixodbc-dev \
-    libcurl4-openssl-dev \
-    libssl-dev \
-    libudunits2-dev 
+COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
+RUN chown -R shiny /var/lib/shiny-server/
 
-## update system libraries
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get clean
+# OpenShift gives a random uid for the user and some programs try to find a username from the /etc/passwd.
+# Let user to fix it, but obviously this shouldn't be run outside OpenShift
+RUN chmod ug+rw /etc/passwd
+COPY fix-username.sh /usr/bin/fix-username.sh
+COPY shiny-server.sh /usr/bin/shiny-server.sh
 
-# copy necessary files
 ## app folder
-COPY /sunnyd-shinyapp ./app
+#COPY /sunnyd-shinyapp ./app
+ADD ./sunnyd-shinyapp /srv/code
 
-## renv.lock file
-## COPY /sunnyd-shinyapp/renv.lock ./renv.lock
-
-# install renv & restore packages
+# install packages
 RUN install2.r tidyverse shiny shinyjs rsconnect shinythemes shinydashboard colourvalues waiter sf leaflet raster rgdal lwgeom ggrepel DT htmltools RColorBrewer lubridate plotly units
-# RUN R -e "install.packages(c('renv', 'tidyverse','shiny','shinyjs','rsconnect', 'shinythemes','shinydashboard','colourvalues','waiter', 'sf',  'leaflet', 'raster', 'rgdal', 'lwgeom', 'ggrepel', 'DT', 'htmltools', 'RColorBrewer', 'lubridate', 'plotly', 'units'), repos='http://cran.rstudio.com/', Ncpus = 6)"
+
+RUN chmod a+rx /usr/bin/shiny-server.sh
+
+# Make sure the directory for individual app logs exists and is usable
+RUN chmod -R a+rwX /var/log/shiny-server
+RUN chmod -R a+rwX /var/lib/shiny-server
+
+CMD /usr/bin/shiny-server.sh
 
 # expose port
-EXPOSE 3838
+# EXPOSE 3838
 
 # run app on container start
-CMD ["R", "-e", "shiny::runApp('/app', host = '0.0.0.0', port = 3838)"]
+# CMD ["R", "-e", "shiny::runApp('/app', host = '0.0.0.0', port = 3838)"]
