@@ -30,9 +30,10 @@ COPY /sunnyd-shinyapp ./app
 RUN install2.r renv
 
 ## renv.lock file
-COPY /example-app/renv.lock ./renv.lock
+COPY /sunnyd-shinyapp/renv.lock ./renv.lock
 
 # install renv & restore packages
+RUN Rscript -e 'renv::consent(provided=TRUE)'
 RUN Rscript -e 'renv::restore()'
 
 # expose port

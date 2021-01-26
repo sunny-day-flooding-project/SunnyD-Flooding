@@ -21,7 +21,7 @@ library(plotly)
 library(RPostgres)
 library(DBI)
 library(pool)
-library(config)
+# library(config)
 
 # City names to show on initial load map
 place_names <- c("Beaufort, North Carolina", "Carolina Beach, North Carolina")
@@ -49,16 +49,16 @@ pal <- colorNumeric(
     domain = c(-3,3))
 
 #Load config file for db sensitive info
-db_info <- get("48340613-5fda-11eb-b0e8-0a580a012ee8")
+# db_info <- get("48340613-5fda-11eb-b0e8-0a580a012ee8")
 
 # Connect to database
 con <- dbPool(
     drv =RPostgres::Postgres(),
-    dbname = db_info$POSTGRESQL_DATABASE,
+    dbname = Sys.getenv("POSTGRESQL_DATABASE"),
     host = "localhost",
     port = "5432", #9997 on Adam's machine, 5432 from openshift
-    password = db_info$POSTGRESQL_PASSWORD, 
-    user = db_info$POSTGRESQL_USER 
+    password = Sys.getenv("POSTGRESQL_PASSWORD"), 
+    user = Sys.getenv("POSTGRESQL_USER") 
 )
 
 onStop(function() {
