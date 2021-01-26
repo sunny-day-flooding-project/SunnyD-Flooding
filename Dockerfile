@@ -14,7 +14,8 @@ RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libcurl4-openssl-dev \
     libssl-dev \
     libudunits2-dev \
-    libgdal-dev
+    libgdal-dev \
+    odbc-postgresql
 
 ## update system libraries
 RUN apt-get update && \
@@ -26,7 +27,13 @@ RUN apt-get update && \
 COPY /sunnyd-shinyapp ./app
 
 # install renv & restore packages
-RUN install2.r shinythemes shinydashboard colourvalues waiter sf leaflet raster rgdal lwgeom DT htmltools RColorBrewer lubridate plotly units
+RUN install2.r renv
+
+## renv.lock file
+COPY /example-app/renv.lock ./renv.lock
+
+# install renv & restore packages
+RUN Rscript -e 'renv::restore()'
 
 # expose port
 EXPOSE 3838

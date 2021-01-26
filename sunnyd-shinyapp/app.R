@@ -1,4 +1,5 @@
 # Packages to load
+library(renv)
 library(tidyverse)
 library(lubridate)
 library(shiny)
@@ -17,6 +18,10 @@ library(DT)
 library(htmltools)
 library(RColorBrewer)
 library(plotly)
+library(RPostgres)
+library(DBI)
+library(pool)
+library(config)
 
 # City names to show on initial load map
 place_names <- c("Beaufort, North Carolina", "Carolina Beach, North Carolina")
@@ -43,24 +48,34 @@ pal <- colorNumeric(
     palette = rev(brewer.pal(10,"RdBu")),
     domain = c(-3,3))
 
-# Sensor lat and long data
-sensor_locations <- tibble::tibble("place" = c("Beaufort, North Carolina", "Beaufort, North Carolina", "Carolina Beach, North Carolina", "Carolina Beach, North Carolina"),
-                                   "sensor_ID" = c("BF_1","BF_2","CB_1", "CB_2"),
-                                   "lat" = c(34.715890,34.714741,34.052327, 34.053141), 
-                                   "long" = c(-76.663831, -76.661725, -77.885139, -77.884629)) %>% 
-    sf::st_as_sf(coords = c("long","lat"), crs = 4269) 
+#Load config file for db sensitive info
+db_info <- get("48340613-5fda-11eb-b0e8-0a580a012ee8")
 
-# Loads fake data
-database <- sensor_locations %>% tibble::as_tibble() %>% slice(rep(1:n(), each=1000)) %>% 
-    mutate(level = sin(row_number()) + rnorm(n=10,mean=0, sd=.1)) %>% 
-    mutate(date = rep(seq(from = ymd_hms(Sys.time(),tz="EST") - days(40),by ="hours", length.out = 1000),nrow(sensor_locations)))
+# Connect to database
+con <- dbPool(
+    drv =RPostgres::Postgres(),
+    dbname = db_info$POSTGRESQL_DATABASE,
+    host = "localhost",
+    port = "5432", #9997 on Adam's machine, 5432 from openshift
+    password = db_info$POSTGRESQL_PASSWORD, 
+    user = db_info$POSTGRESQL_USER 
+)
+
+onStop(function() {
+    poolClose(con)
+})
+
+database <- con %>% tbl("sensor_data")
 
 # Update sensor locations with most recent data from database, also construct html popups
-sensor_locations <- sensor_locations %>% 
+sensor_locations <- con %>% tbl("sensor_locations") %>% 
+# (conn = con, name = "sensor_locations") %>% 
+    collect() %>% 
     left_join(database %>% 
                   group_by(sensor_ID) %>% 
-                  arrange(desc(date)) %>%
-                  slice(1)) %>% 
+                  filter(date == max(date)),
+              copy = T) %>% 
+    sf::st_as_sf(coords = c("long","lat"), crs = 4269) %>% 
     mutate(html_popups = paste0(
         '<div align=\"center\">',
         '<h3>Site ',sensor_ID,'</h3>',
@@ -251,15 +266,15 @@ server <- function(input, output, session) {
                                          data_location = "Beaufort, North Carolina")
     
     # Reactive value that stores the data from the selected sensor site, filtered by date range
+    
     sensor_data <- reactive({
         req(input$data_sensor)
         database %>% 
-            filter(sensor_ID %in% input$data_sensor) %>%
-            filter(date >= min(input$dateRange, na.rm=T) & date <= max(input$dateRange, na.rm=T)) %>% 
-            dplyr::select(-geometry)
+            filter(sensor_ID %in% !!input$data_sensor) %>% 
+            filter(date >= !!input$dateRange[1] & date <= !!input$dateRange[2]) %>% 
+            collect()
     })
-    
-    
+
     # Create initial map for "map" tab 
     output$m <-renderLeaflet(leaflet() %>%
                                  addProviderTiles(group = "Positron (default)",provider = providers$CartoDB.Positron) %>%
@@ -327,7 +342,7 @@ server <- function(input, output, session) {
     map2_selected_location <- reactive({
         req(input$data_location)
 
-        sensor_locations %>%
+        sensor_locations %>% 
             filter(place == input$data_location) %>%
             sf::st_coordinates() %>%
             as_tibble() %>%
@@ -339,7 +354,7 @@ server <- function(input, output, session) {
     map2_selected_sensors <- reactive({
         req(input$data_sensor)
         
-        sensor_locations %>%
+        sensor_locations %>% 
             filter(sensor_ID %in% input$data_sensor)
     })
     
@@ -403,7 +418,7 @@ server <- function(input, output, session) {
                           legend.title = element_blank())+
                     scale_x_datetime())
             )
-            
+
         # Render table with selected data
             output$site_data <- renderDataTable(sensor_data())
         })
