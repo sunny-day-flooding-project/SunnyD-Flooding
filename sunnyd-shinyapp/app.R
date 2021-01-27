@@ -55,7 +55,7 @@ pal <- colorNumeric(
 con <- dbPool(
     drv =RPostgres::Postgres(),
     dbname = Sys.getenv("POSTGRESQL_DATABASE"),
-    host = "localhost",
+    host = "postgresql.acgold.svc.cluster.local",
     port = "5432", #9997 on Adam's machine, 5432 from openshift
     password = Sys.getenv("POSTGRESQL_PASSWORD"), 
     user = Sys.getenv("POSTGRESQL_USER") 
