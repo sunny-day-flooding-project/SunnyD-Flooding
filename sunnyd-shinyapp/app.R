@@ -1,12 +1,8 @@
 # Packages to load
-library(renv)
 library(tidyverse)
 library(lubridate)
 library(shiny)
-# library(shinyjs)
-# library(rsconnect)
-library(shinythemes)
-# library(shinydashboard)
+library(shinydashboard)
 library(colourvalues)
 library(waiter)
 library(sf)
@@ -21,13 +17,15 @@ library(plotly)
 library(RPostgres)
 library(DBI)
 library(pool)
-# library(config)
+library(magick)
+library(shinyalert)
+
 
 # City names to show on initial load map
 place_names <- c("Beaufort, North Carolina", "Carolina Beach, North Carolina")
 
 # Boundaries of locations listed in "place_names"
-urban_boundaries <- sf::st_read("data/merged_boundaries_coast.shp") %>%
+urban_boundaries <- sf::st_read("gis_data/merged_boundaries_coast.shp") %>%
     sf::st_make_valid() %>%
     sf::st_cast("POLYGON") %>%
     mutate(place = paste0(Place_Name,", ",State_Name)) %>% 
@@ -39,8 +37,8 @@ urban_boundaries <- sf::st_read("data/merged_boundaries_coast.shp") %>%
 
 # HTML waiting screen for initial load
 waiting_screen <- tagList(
-    spin_ring(),
-    h4("Cool stuff loading...")
+    spin_wave(),
+    h4("Loading...")
 )
 
 # Color palette for water level on site map
@@ -48,15 +46,12 @@ pal <- colorNumeric(
     palette = rev(brewer.pal(10,"RdBu")),
     domain = c(-3,3))
 
-#Load config file for db sensitive info
-# db_info <- get("48340613-5fda-11eb-b0e8-0a580a012ee8")
-
 # Connect to database
 con <- dbPool(
     drv =RPostgres::Postgres(),
     dbname = Sys.getenv("POSTGRESQL_DATABASE"),
-    host = "postgresql.acgold.svc.cluster.local",
-    port = "5432", #9997 on Adam's machine, 5432 from openshift
+    host = Sys.getenv("POSTGRESQL_HOST"),
+    port = Sys.getenv("POSTGRESQL_PORT"),
     password = Sys.getenv("POSTGRESQL_PASSWORD"), 
     user = Sys.getenv("POSTGRESQL_USER") 
 )
@@ -68,106 +63,55 @@ onStop(function() {
 database <- con %>% tbl("sensor_data")
 
 # Update sensor locations with most recent data from database, also construct html popups
-sensor_locations <- con %>% tbl("sensor_locations") %>% 
-# (conn = con, name = "sensor_locations") %>% 
-    collect() %>% 
-    left_join(database %>% 
-                  group_by(sensor_ID) %>% 
+sensor_locations <- con %>% tbl("sensor_locations") %>%
+    collect() %>%
+    left_join(database %>%
+                  group_by(sensor_ID) %>%
                   filter(date == max(date)),
-              copy = T) %>% 
-    sf::st_as_sf(coords = c("long","lat"), crs = 4269) %>% 
-    mutate(html_popups = paste0(
-        '<div align=\"center\">',
-        '<h3>Site ',sensor_ID,'</h3>',
-        '<h4>Current level: ', round(level, digits = 2),'</h4>',
-        '<button id="view_site" type="button" class="btn btn-default action-button" onclick="{Shiny.onInputChange(&#39;view_site&#39;, (Math.random() * 1000) + 1);}">View data</button></div>'))
+              copy = T) %>%
+    sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
+    mutate(
+        html_popups = paste0(
+            '<div align=\"center\">',
+            '<h3>Site ',
+            sensor_ID,
+            '</h3>',
+            '<h4>Current level: ',
+            round(level, digits = 2),
+            '</h4>',
+            '<button id="view_site" type="button" class="btn btn-default action-button" onclick="{Shiny.onInputChange(&#39;view_site&#39;, (Math.random() * 1000) + 1);}">View data</button></div>'
+        )
+    )
 
 #------------------------ Define UI ---------------------------------------
-ui <- tagList(
-    tags$style(".fa-3x {color:#18bc9c"),
-    navbarPage(
+ui <- dashboardPage(
+    # navbarPage(
     title = "SunnyD flooding project", 
-    id = "nav",
-    theme = shinythemes::shinytheme("flatly"),
-    
-    # Home page tab has information about project
-    tabPanel(
-        title = "Home",
-        value = "Home",
-        div(
-            align = "center",
-            style = "background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('beaufort_flooding.jpg');
-                 background-position: center;
-                 background-repeat: no-repeat;
-                 background-size: cover;
-                 margin-top: -22px;
-                 margin-left: -15px;
-                 margin-right: -15px;
-                 height: 40vh;
-
-             ",
-            div(
-                style = "position: absolute;
-             top: 25%;
-             left: 50%;
-                 transform: translate(-50%, -50%);",
-                h1("SunnyD Flooding Project", style = "color:white"),
-                p(
-                    "Measuring recurrent coastal flooding with real-time sensor networks",
-                    style = "color:white"
-                ),
-                br(),
-                br(),
-                actionButton("click", label = "View our sites", class = "btn-success"),
-            )
-        ),
-        br(),
-        br(),
-        fluidRow(
-            column(
-                width = 4,
-                icon("cloud", "fa-3x"),
-                h2("Sensors"),
-                p(
-                    "Constructing a real-time sensor network in storm drains to measuring recurrent coastal flooding caused by tides, winds, and storm surge"
-                ),
-                align = "center"
-            ),
-            column(
-                width = 4,
-                icon("laptop", "fa-3x"),
-                h2("Modeling"),
-                p(
-                    "Using computer models to understand drivers of recurrent flooding so we can better predict future conditions"
-                ),
-                align = "center"
-            ),
-            column(
-                width = 4,
-                icon("home", "fa-3x"),
-                h2("Community"),
-                p(
-                    "Engaging with stakeholders and community members to design our projects and inform public policy"
-                ),
-                align = "center"
-            )
-        )
-    ), 
-
-    # Mapping tab for overview and site map
-    tabPanel(
-        title = "Map",
-        value = "Map",
-        waiter::use_waiter(),
-        waiter::waiter_show_on_load(html = waiting_screen),
-        sidebarLayout(sidebarPanel(
-            div(
-                align = "center",
-                h2("SunnyD Flooding Project"),
-                helpText("Measuring sunny day flooding in increase coastal resilience"),
-                br(),
-
-                # Select city, either Beaufort or Carolina Beach
+    # id = "nav",
+    skin = "black",
+    header = dashboardHeader(
+        title =  HTML('
+            <a href="https://tarheels.live/sunnydayflood">
+                <div width="300px">
+                      <i class="fas fa-sun" role="presentation" aria-label="sun icon" style="color:#fbb040;position:absolute;left:15px;top:15px"></i><p style="color:white">Sunny Day Flooding Project</p>
+                </div>
+            </a>
+                      '),
+        titleWidth = 350
+    ),
+    sidebar = dashboardSidebar(
+        width = 350,
+        sidebarMenu(
+            id = "nav",
+            menuItem("Map", tabName = "Map", icon = icon("map")),
+            
+            conditionalPanel(
+                condition = "input.nav === 'Map'",
+                helpText("Select city from menu,", style = "color:white;font-size:12pt;text-align:center"),
+                helpText("or click the location on the map",
+                         style = "color:white;font-size:12pt;text-align:center"),
+                
+                #Select city, either Beaufort or Carolina Beach
                 selectizeInput(
                     'city_name',
                     'Location',
@@ -176,63 +120,99 @@ ui <- tagList(
                         placeholder = 'Please select an option below',
                         onInitialize = I('function() { this.setValue(""); }')
                     )
-                ),
-                br(),
-                br(),
-                br(),
-                br(),
-                plotOutput("scatterplot", height = "40vh")
+                )
+            ), 
+            menuItem("Data", tabName = "Data", icon = icon("database")),
+            
+            conditionalPanel(
+                condition = "input.nav === 'Data'",
+                uiOutput("firstSelection", align = "center"),
+                uiOutput("secondSelection", align = "center"),
+                
+                # filter by date, auto is the last three days of data
+                dateRangeInput(
+                    'dateRange',
+                    label = 'Date range input: yyyy-mm-dd',
+                    start = Sys.Date() - 3,
+                    end = Sys.Date()
+                )
+            ), 
+            
+            menuItem("Pictures", tabName = "Pictures", icon = icon("camera"))
             )
         ),
+    dashboardBody(
+        fluidPage(
+            useShinyalert(),
+            
+        tags$head(tags$style(HTML('
+        .skin-black .main-header .logo {
+          background-color: #13294B;
+          border-right: 1px solid #13294B;
+        }
+        .skin-black .main-header .logo:hover {
+          background-color: #000000;
+        }
         
-        # Panel with map
-        mainPanel(div(
-            tags$style(type = "text/css", "#m {height: calc(100vh - 90px) !important;}"),
-            leafletOutput(outputId = "m", height = "100vh"),
-        )))
-    ), 
+        .skin-black .main-header .navbar {
+          background-color: #13294B;
+        }
+        
+        .skin-black .main-header .navbar>.sidebar-toggle {
+          color: #fff;
+          border-right: 1px solid #13294B;
+        }
+        
+        .skin-black .main-header .navbar .sidebar-toggle:hover {
+          color: #fff;
+          background: #000;
+        }
+        
+        .main-header .sidebar-toggle {
+          font-weight: 200; 
+        }
+
+      '))),
+        tabItems(
+    # Mapping tab for overview and site map
+    tabItem(tabName = "Map",
+        waiter::use_waiter(),
+            fluidRow(
+            # tags$style(type = "text/css", "#m {height: calc(100vh - 90px) !important;}"),
+            leafletOutput(outputId = "m", width="100%",height="calc(100vh - 80px)"),
+            style = "z-index: 5;" ## z-index modification
+                    )
+            ), 
     
     # Tab showing selected data and time series graphs
-    tabPanel(title = "Data",
-             value = "Data",
-             sidebarLayout(
-                 sidebarPanel(
-                     
-                     # Selecting City and then sensor station
-                     uiOutput("firstSelection", align = "center"),
-                     uiOutput("secondSelection", align = "center"),
-                     
-                     # filter by date, auto is the last three days of data
-                     dateRangeInput(
-                         'dateRange',
-                         label = 'Date range input: yyyy-mm-dd',
-                         start = Sys.Date() - 3,
-                         end = Sys.Date()
-                     ),
-                     
-                     # Small map showing all of the sites
-                     leafletOutput(outputId = "m2", height = "40vh")
-                 ),
-                 
+    tabItem(tabName = "Data",
+            fluidRow(leafletOutput(outputId = "m2", height = "40vh")),
+                 br(),
                  # Time series interactive plot or data table in separate tabs
-                 mainPanel(tabsetPanel(
+            fluidRow(
+                     tabsetPanel(
                      id = "data_tabs",
-                     
                      tabPanel(
                          "Plot",
                          plotlyOutput("site_level_ts", height = "40vh"),
                          uiOutput("site_data_panel")
-                     ),
-                     tabPanel("Table",
-                              DT::dataTableOutput("site_data"))
-                 ))
-             ))#, 
-    
-    # Adds copyright to
-    # tags$script(HTML("var header = $('.navbar> .container-fluid');
-    #                    header.append('<div style=/'float:right;color:white/'><h5>&#169 Adam C. Gold, 2020</h5></div> !important');
-    #                    console.log(header)"))
-))
+                            ),
+                     tabPanel(
+                         "Table",
+                          DT::dataTableOutput("site_data")
+                            )
+                                )
+                    )
+            ),
+    tabItem(tabName = "Pictures",
+            fluidRow(
+                imageOutput(outputId = "camera", width = "20%", height = "100px")
+                    )
+            )
+                )
+                )
+                )
+                )
 
 
 
@@ -241,10 +221,20 @@ server <- function(input, output, session) {
     
     # Initialize wait screen for plotting data
     w <- Waiter$new(id="site_level_ts")
+    shinyalert(title = "Welcome to the data viewer!",
+               text = "Here you can view real-time data (fake data displayed now) from Sunny Day Flooding Project monitoring sites.",
+               closeOnClickOutside = FALSE,
+               showConfirmButton = T,
+               confirmButtonCol = "#fbb040",
+               type = "info",
+               animation=F,
+               size = "s")
     
     # If button on home page (View our sites) is clicked, will switch navbar tab to "Map"
     observeEvent(input$click, {
-        updateNavbarPage(session,
+        updateTabItems(
+        # updateNavbarPage(session,
+            session = session,
                          inputId = "nav",
                          selected = "Map")
     })  
@@ -293,7 +283,6 @@ server <- function(input, output, session) {
                                            opacity = 1) %>% 
                                  addLayersControl(
                                      baseGroups = c("Positron (default)", "Dark Matter","Imagery", "OSM"),
-                                     # overlayGroups = c("overview_locations"),
                                      options = layersControlOptions(collapsed = FALSE)) %>% 
                                  addEasyButton(easyButton(
                                      icon="fa-globe", title="Zoom to Level 4",
@@ -323,7 +312,6 @@ server <- function(input, output, session) {
     # Sensor selected from map tab. Uses map click to update reactive value that controls dropdown menus on Data tab
     map1_clicked_sensor <- reactive({
         req(input$m_marker_click)
-        # reactive_selection$overall_data_sensor <- input$m_marker_click #Possibly not needed, but keeping for now as comment
         input$m_marker_click
         })
     
@@ -366,17 +354,18 @@ server <- function(input, output, session) {
                                             layerId = ~sensor_ID,
                                             label = ~sensor_ID,
                                             color = "black",
-                                            labelOptions = labelOptions(noHide = F))
+                                            labelOptions = labelOptions(noHide = F)) %>% 
+                                  setView(lng = map2_selected_location()[1], lat = map2_selected_location()[2], zoom=15)
                               )
+    
     # If location is selected on Data tab dropdown, change the map view
-    observeEvent(input$data_location,{
+    observeEvent(input$data_location, ignoreNULL = T,{
         leafletProxy(mapId = "m2") %>%
             setView(lng = map2_selected_location()[1], lat = map2_selected_location()[2], zoom=15)
     })
     
     # Create a red point for selected sensor
     observe({
-        # print(map2_selected_sensors())
         leafletProxy(mapId = "m2") %>%
         clearGroup(group = "selected_site_map2") %>%
         addCircleMarkers(data = map2_selected_sensors(),
@@ -388,23 +377,21 @@ server <- function(input, output, session) {
     # Store ID of clicked point on map on Data tab
     map2_clicked_sensor <- reactive({
         req(input$m2_marker_click)
-        reactive_selection$overall_data_sensor <- input$m2_marker_click
-            
         input$m2_marker_click
         })
     
     # Update reactive value for dropdown menu using map 2 marker click
     observe({
-        reactive_selection$overall_data_sensor <- input$m2_marker_click
+            reactive_selection$overall_data_sensor <- map2_clicked_sensor()
     })
     
-    # View site by switching tab
+    # # View site by switching tab
         observeEvent(input$view_site, {
             updateNavbarPage(session, 
                          inputId = "nav",
                          selected = "Data")
         })
-          
+    #       
         # Render plot with selected data
         observe({
             output$site_level_ts <- renderPlotly(
@@ -426,6 +413,20 @@ server <- function(input, output, session) {
 
         waiter_hide()
         
+        output$camera <- renderImage({
+          invalidateLater(60*6*1000, session)
+          tmpfile <- tempfile(fileext='.jpg')
+          
+          magick::image_read("/data/CAM_BF_01.jpg") %>% 
+            magick::image_write(tmpfile)
+            # magick::image_ggplot()
+          
+          list(src = tmpfile, 
+               contentType = "image/jpeg",
+               width = "800px",
+               # height = "400px",
+               alt = "This is alternate text")
+        }, deleteFile = T)
 }
 
 # Run the application

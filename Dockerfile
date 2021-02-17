@@ -7,7 +7,6 @@ RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libxml2-dev \
     libcairo2-dev \
     libsqlite3-dev \
-    #libmariadbd-dev \
     libpq-dev \
     libssh2-1-dev \
     unixodbc-dev \
@@ -15,29 +14,32 @@ RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libssl-dev \
     libudunits2-dev \
     libgdal-dev \
-    odbc-postgresql
+    odbc-postgresql \
+    libmagick++-dev
 
 ## update system libraries
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get clean
 
-# copy necessary files
-## app folder
-COPY /sunnyd-shinyapp ./app
+# install packages
+RUN install2.r lubridate shinydashboard colourvalues waiter sf leaflet raster rgdal lwgeom DT htmltools RColorBrewer plotly RPostgres DBI pool magick shinyalert
 
-# install renv & restore packages
-RUN install2.r renv
-
-## renv.lock file
-COPY /sunnyd-shinyapp/renv.lock ./renv.lock
-
-# install renv & restore packages
-RUN Rscript -e 'renv::consent(provided=TRUE)'
-RUN Rscript -e 'renv::restore()'
-
-# expose port
+# expose ports
 EXPOSE 3838
+EXPOSE 5432
+
+# create new user so it doesn't run as root
+RUN groupadd -r shinyapp && useradd --no-log-init -r -g shinyapp shinyapp
+
+# copy necessary files
+ADD sunnyd-shinyapp /home/shinyapp/app
+
+# change working directory
+WORKDIR /home/shinyapp
+
+# change to new 'shinyapp' user
+USER shinyapp
 
 # run app on container start
-CMD ["R", "-e", "shiny::runApp('/app', host = '0.0.0.0', port = 3838)"]
+CMD ["R", "-e", "shiny::runApp('app', host = '0.0.0.0', port = 3838)"]
