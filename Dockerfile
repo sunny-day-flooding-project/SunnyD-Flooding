@@ -1,5 +1,5 @@
 # Base image https://hub.docker.com/u/rocker/
-FROM rocker/shiny-verse:latest
+FROM rocker/shiny:latest
 
 # system libraries of general use
 ## install debian packages
@@ -14,8 +14,8 @@ RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libssl-dev \
     libudunits2-dev \
     libgdal-dev \
-    odbc-postgresql \
-    libmagick++-dev
+    odbc-postgresql 
+    # libmagick++-dev
 
 ## update system libraries
 RUN apt-get update && \
@@ -23,7 +23,7 @@ RUN apt-get update && \
     apt-get clean
 
 # install packages
-RUN install2.r lubridate shinydashboard colourvalues waiter sf leaflet raster rgdal lwgeom DT htmltools RColorBrewer plotly RPostgres DBI pool magick shinyalert
+RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer plotly shinyalert RPostgres DBI pool dbplyr
 
 # expose ports
 EXPOSE 3838
