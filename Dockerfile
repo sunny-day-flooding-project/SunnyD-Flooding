@@ -23,7 +23,7 @@ RUN apt-get update && \
     apt-get clean
 
 # install packages
-RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer plotly shinyalert RPostgres DBI pool dbplyr
+RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer dygraphs xts shinyalert RPostgres DBI pool dbplyr
 
 # expose ports
 EXPOSE 3838

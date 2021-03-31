@@ -11,11 +11,14 @@ library(leaflet)
 library(DT)
 library(htmltools)
 library(RColorBrewer)
-library(plotly)
+# library(plotly)
+library(dygraphs)
+library(xts)
 library(RPostgres)
 library(DBI)
 library(pool)
 library(shinyalert)
+
 
 # Source env variables if working on desktop
 # source("C:/Users/Adam Gold/Desktop/postgres_keys.R")
@@ -43,7 +46,7 @@ waiting_screen <- tagList(
 # Color palette for water level on site map
 pal <- colorNumeric(
     palette = rev(brewer.pal(10,"RdBu")),
-    domain = c(-3,3))
+    domain = c(-2,2))
 
 # Connect to database
 con <- dbPool(
@@ -60,9 +63,15 @@ onStop(function() {
 })
 
 database <- con %>% 
-  tbl("sensor_data")
+  tbl("sensor_data_processed")
 
-
+# dyUnzoom <-function(dygraph) {
+#   dyPlugin(
+#     dygraph = dygraph,
+#     name = "Unzoom",
+#     path = system.file("plugins/unzoom.js", package = "dygraphs")
+#   )
+# }
 #------------------------ Define UI ---------------------------------------
 ui <- dashboardPage(
     title = "Data Viewer - Sunny Day Flooding Project", 
@@ -104,9 +113,9 @@ ui <- dashboardPage(
                 uiOutput("secondSelection", align = "center"),
                 
                 # filter by date, auto is the last three days of data
-                uiOutput("date_filter", align="center"),
+                # uiOutput("date_filter", align="center"),
                 
-                div(actionButton("get_plot_data", "Plot New Dates"), align="center")
+                # div(actionButton("get_plot_data", "Plot New Dates"), align="center")
                 
             ), 
             
@@ -177,6 +186,10 @@ ui <- dashboardPage(
           border: 3px;
         }
         
+        .content-wrapper, .right-side {
+                                background-color: #ffffff;
+                                }
+        
       '))),
         tabItems(
           
@@ -191,8 +204,6 @@ ui <- dashboardPage(
     
     # Tab showing selected data and time series graphs
     tabItem(tabName = "Data",
-            fluidRow(leafletOutput(outputId = "m2", height = "40vh")),
-                 br(),
             
             # Time series interactive plot or data table in separate tabs
             fluidRow(
@@ -200,8 +211,18 @@ ui <- dashboardPage(
                      id = "data_tabs",
                      tabPanel(
                          "Plot",
-                         plotlyOutput("site_level_ts", height = "40vh"),
-                         uiOutput("site_data_panel")
+                         dygraphOutput("site_level_ts", height = "40vh"),
+                         # uiOutput("site_data_panel"),
+                         br(),
+                         br(),
+                         wellPanel(fluidRow(column(4,
+                                                   
+                                                   uiOutput("date_filter", align = "center"),
+                                                   div(actionButton("get_plot_data", "Plot New Dates"), align =
+                                                         "center")
+                         ),
+                         column(4, h3("More control over elevation datums coming soon!")),
+                         column(4))) #leafletOutput(outputId = "m2", height = "30vh")
                             ),
                      tabPanel(
                          "Table",
@@ -252,8 +273,8 @@ server <- function(input, output, session) {
     )
     
     # Popup on load to display info
-    shinyalert(title = "Welcome to the data viewer!",
-               text = "Here you can view real-time data (fake data displayed now) from Sunny Day Flooding Project monitoring sites.",
+    shinyalert(title = "Welcome to the data viewer! (beta)",
+               text = "Here you can view real-time data from Sunny Day Flooding Project monitoring sites.",
                closeOnClickOutside = FALSE,
                showConfirmButton = T,
                confirmButtonCol = "#fbb040",
@@ -268,15 +289,16 @@ server <- function(input, output, session) {
       collect() %>%
       left_join(database %>%
                   group_by(sensor_ID) %>%
-                  filter(date == max(date, na.rm=T)),
-                copy = T) %>%
+                  filter(date == max(date, na.rm=T)) %>% 
+                  collect(),
+                by=c("place","sensor_ID", "sensor_elevation","road_elevation")) %>%
       sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
       mutate(
         html_popups = paste0( 
           '<div>',
               '<h3 align="center"><strong>Site ',sensor_ID,'</h3></strong>',
           '<h4 align="center">Last level:</h4>',
-          '<h3 align="center">',round(level, digits = 2),'</h3>',
+          '<h3 align="center">',round(road_water_level, digits = 2),'</h3>',
           '<p align="center">',date,'</p>',
           '<p align="center">Click to view data at this site</p>'
         )
@@ -355,8 +377,8 @@ server <- function(input, output, session) {
                                                   clusterOptions = markerClusterOptions(),
                                                   clusterId = "place",
                                                   layerId = sensor_locations$sensor_ID,
-                                                  color = "black", fillColor = ~pal(level), fillOpacity = 1) %>% 
-                                 addLegend('bottomright', pal = pal, values = c(-3,3),
+                                                  color = "black", fillColor = ~pal(road_water_level), fillOpacity = 1) %>% 
+                                 leaflet::addLegend('bottomright', pal = pal, values = c(-2,2),
                                            title = 'Water level<br>relative to<br>surface (ft)',
                                            opacity = 1) %>% 
                                  addLayersControl(
@@ -471,24 +493,62 @@ server <- function(input, output, session) {
         
         # Render plot with selected data
         observe({
+          
+          # invalidateLater(6*60*1000, session)
           min_date_plot <- as.POSIXct.Date(reactive_min_date())
           max_date_plot <- as.POSIXct.Date(reactive_max_date())
           
           w$show()
-            output$site_level_ts <- renderPlotly(
-                ggplotly(ggplot(data = sensor_data())+
-                geom_line(aes(x=date,y=level, color = sensor_ID, group = sensor_ID))+
-                    geom_point(aes(x=date,y=level,color=sensor_ID), size=0.50)+
-                    theme_minimal()+
-                    xlab("Date")+
-                    ylab("Water level (ft)")+
-                    theme(text=element_text(size = 12),
-                          legend.title = element_blank())+
-                    scale_x_datetime(limits = c(min_date_plot, max_date_plot)))
-            )
+          output$site_level_ts <- renderDygraph({
+            plot_sensor_data <- sensor_data()
+            
+            plot_sensor_stats <- sensor_locations %>% 
+              filter(sensor_ID %in% plot_sensor_data$sensor_ID)
+            
+            x <- xts::xts(plot_sensor_data$road_water_level, 
+                          order.by = plot_sensor_data$date,
+                          tzone = "UTC")
+            dygraph(x, main = plot_sensor_stats$sensor_ID) %>% 
+              dyAxis("y", label = "Water level relative to road (ft)", valueRange = c(-2, 2)) %>% 
+              dyAxis("x", label = "Date (EST/EDT)") %>% 
+              dyOptions(colors = "#3266a8",
+                        gridLineColor = "#e0e0e0",
+                        strokeWidth = 2) %>% 
+              dyLimit(0, color = "red", label = "Road Elevation") %>% 
+              dyLimit(plot_sensor_stats$sensor_elevation - plot_sensor_stats$road_elevation, color = "black", label = "Sensor Elevation") %>% 
+              
+              dyUnzoom() %>% 
+              dyCrosshair(direction = "vertical") %>% 
+              dySeries("V1", label = "Level") %>% 
+              dyLegend(show = "follow")
+              
+            # ggplotly(
+            #   ggplot(data = sensor_data()) +
+            #     geom_hline(aes(yintercept = 0), lwd=0.25) +
+            #     geom_line(aes(
+            #       x = date, y = road_water_level, group = sensor_ID
+            #     ), color = "#3266a8") +
+            #     # geom_point(
+            #     #   aes(x = date, y = road_water_level, color = sensor_ID),
+            #     #   size = 0.50,
+            #     #   color = "#3266a8"
+            #     # ) +
+            #     theme_minimal() +
+            #     xlab("Date") +
+            #     ylab("Water level (ft)") +
+            #     theme(text = element_text(size = 12),
+            #           legend.title = element_blank()) +
+            #     scale_x_datetime(limits = c(min_date_plot, max_date_plot)) +
+            #     coord_cartesian(ylim = c(-2, 2))
+            # )
+          })
 
         # Render table with selected data
-            output$site_data <- renderDataTable(sensor_data())
+            output$site_data <- renderDataTable(
+              sensor_data() %>% 
+              mutate_if(.predicate = is.numeric, .funs = "round", digits = 2)
+            )
+            
             w$hide()
         })
 
@@ -496,8 +556,8 @@ server <- function(input, output, session) {
         waiter_hide()
         
         output$camera <- renderUI({
-          invalidateLater(10*60*1000, session)
-          tags$img(src = "https://api-acgold.cloudapps.unc.edu/public/CAM_BF_01.jpg", height = 400)
+          invalidateLater(6*60*1000, session)
+          tags$img(src = "https://photos-sunnydayflood.cloudapps.unc.edu/public/CAM_BF_01.jpg", height = 400)
         })
 }
 
