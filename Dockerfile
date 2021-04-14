@@ -14,8 +14,8 @@ RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libssl-dev \
     libudunits2-dev \
     libgdal-dev \
-    odbc-postgresql 
-    # libmagick++-dev
+    odbc-postgresql \
+    libmagick++-dev
 
 ## update system libraries
 RUN apt-get update && \
@@ -23,7 +23,7 @@ RUN apt-get update && \
     apt-get clean
 
 # install packages
-RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer dygraphs xts shinyalert RPostgres DBI pool dbplyr
+RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer dygraphs xts shinyalert RPostgres DBI pool dbplyr magick
 
 # expose ports
 EXPOSE 3838
