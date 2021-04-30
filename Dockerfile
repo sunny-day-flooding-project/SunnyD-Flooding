@@ -5,6 +5,12 @@ FROM rocker/shiny:latest
 ## install debian packages
 RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libxml2-dev \
+    # build-essential \
+    libglpk-dev \
+    libjq-dev \
+    libv8-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
     libcairo2-dev \
     libsqlite3-dev \
     libpq-dev \
@@ -23,7 +29,7 @@ RUN apt-get update && \
     apt-get clean
 
 # install packages
-RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer dygraphs xts shinyalert RPostgres DBI pool dbplyr magick
+RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer highcharter xts shinyalert RPostgres DBI pool dbplyr magick stringr shinydisconnect tippy httr
 
 # expose ports
 EXPOSE 3838

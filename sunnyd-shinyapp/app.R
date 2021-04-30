@@ -11,14 +11,17 @@ library(leaflet)
 library(DT)
 library(htmltools)
 library(RColorBrewer)
-library(dygraphs)
+library(highcharter)
 library(magick)
 library(xts)
 library(RPostgres)
 library(DBI)
 library(pool)
 library(shinyalert)
-
+library(stringr)
+library(shinydisconnect)
+library(tippy)
+library(httr)
 
 # Source env variables if working on desktop
 # source("C:/Users/Adam Gold/Desktop/postgres_keys.R")
@@ -47,8 +50,8 @@ waiting_screen <- tagList(
 
 # Color palette for water level on site map
 pal <- colorNumeric(
-    palette = rev(brewer.pal(10,"RdBu")),
-    domain = c(-2,2))
+    palette = rev(brewer.pal(10,"RdYlBu")),
+    domain = c(-2,0))
 
 # Connect to database
 con <- dbPool(
@@ -67,10 +70,80 @@ onStop(function() {
 database <- con %>% 
   tbl("sensor_data_processed")
 
+global <- getOption("highcharter.global")
+global$useUTC <- FALSE
+global$timezoneOffset <- -300
+options(highcharter.global = global)
+
+# Beaufort NOAA wl functions
+beaufort_wl <- function() {
+  request <-
+    httr::GET(
+      url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
+      query = list(
+        "station" = "8656483",
+        "range" = "336",
+        "product" = "water_level",
+        "units" = "english",
+        "datum" = "NAVD",
+        "time_zone" = "gmt",
+        "format" = "json",
+        "application" = "UNC_Institute_for_the_Environment, https://github.com/acgold"
+      )
+    )
+  
+  latest_noaa_wl <-
+    tibble::as_tibble(jsonlite::fromJSON(rawToChar(request$content))$data)
+  colnames(latest_noaa_wl)[1:2] <- c("date", "level_ft_navd88")
+  
+  latest_noaa_wl <- latest_noaa_wl %>%
+    transmute(
+      location = "Beaufort, North Carolina",
+      date = ymd_hm(date),
+      level = as.numeric(level_ft_navd88),
+      entity = "NOAA Observed",
+      notes = "observation"
+    )
+  return(latest_noaa_wl)
+}
+
+beaufort_wl_predictions <- function() {
+  request <-
+    httr::GET(
+      url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
+      query = list(
+        "station" = "8656483",
+        "end_date" = format(Sys.Date() + 3,"%Y%m%d"),
+        "range" = "408",
+        "product" = "predictions",
+        "units" = "english",
+        "datum" = "NAVD",
+        "time_zone" = "gmt",
+        "format" = "json",
+        "application" = "UNC_Institute_for_the_Environment, https://github.com/acgold"
+      )
+    )
+  
+  latest_noaa_wl_predictions <-
+    tibble::as_tibble(jsonlite::fromJSON(rawToChar(request$content))$predictions)
+  colnames(latest_noaa_wl_predictions)[1:2] <- c("date", "predictions_ft_navd88")
+  
+  latest_noaa_wl_predictions <- latest_noaa_wl_predictions %>%
+    transmute(
+      location = "Beaufort, North Carolina",
+      date = ymd_hm(date),
+      level = as.numeric(predictions_ft_navd88),
+      entity = "NOAA Predicted",
+      notes = "prediction"
+    )
+  return(latest_noaa_wl_predictions)
+}
+
 #------------------------ Define UI ---------------------------------------
 ui <- dashboardPage(
     title = "Data Viewer - Sunny Day Flooding Project", 
     skin = "black",
+    
     header = dashboardHeader(
         title =  HTML('
                 <div width="300px">
@@ -83,61 +156,74 @@ ui <- dashboardPage(
         width = 350,
         sidebarMenu(
             id = "nav",
-            menuItem("Map", tabName = "Map", icon = icon("map")),
+            
+              menuItem("Map", tabName = "Map", icon = icon("map")),
             
             conditionalPanel(
                 condition = "input.nav === 'Map'",
-                helpText("Select city from menu", style = "color:white;font-size:12pt;text-align:center"),
-                helpText("or click the location on the map",
-                         style = "color:white;font-size:12pt;text-align:center"),
-                
+                div(style="border-left-style: solid; border-left-width: medium; border-left-color: white;",
+                  p("Use the controls on the sidebar to navigate to a study site and select a map layer", style = "color:white;font-size:12pt;width:250px;white-space: break-spaces;margin-left: auto;margin-right: auto; font-style:italic"),
+                  br(),
+                  p("Hover and click on points explore live data and pictures", style = "color:white;font-size:12pt;width:250px;white-space: break-spaces;margin-left: auto;margin-right: auto; font-style:italic"),
+
                 #Select city, either Beaufort or Carolina Beach
                 selectInput(
                     'city_name',
-                    label = h3("Location"),
+                    label = h4("Location"),
                     choices = c("",place_names),
                     selected = NULL,
-                    multiple = F
+                    multiple = F,
+                    selectize = F
                 ),
                 
-                radioButtons("map_layers", label = h3("Map Layers"),
+                radioButtons("map_layers", label = h4("Map Layers"),
                              choices = list("Water Level Sensors" = 1, "Flood Cams" = 2), 
                              selected = 1)
+            )
             ), 
             menuItem("Data", tabName = "Data", icon = icon("database")),
             
             conditionalPanel(
                 condition = "input.nav === 'Data'",
+                div(style="border-left-style: solid; border-left-width: medium; border-left-color: white;",
+                    
                 uiOutput("firstSelection", align = "center"),
                 uiOutput("secondSelection", align = "center"),
-                
-                # filter by date, auto is the last three days of data
-                # uiOutput("date_filter", align="center"),
-                
-                # div(actionButton("get_plot_data", "Plot New Dates"), align="center")
-                
+                )
             ), 
             
             menuItem("Flood Cam", tabName = "Pictures", icon = icon("camera")),
             conditionalPanel(
               condition = "input.nav === 'Pictures'",
+              div(style="border-left-style: solid; border-left-width: medium; border-left-color: white;",
+                  
               uiOutput("firstCameraSelection", align = "center"),
               uiOutput("secondCameraSelection", align = "center")
-              
-              # filter by date, auto is the last three days of data
-              # uiOutput("date_filter", align="center"),
-              
-              # div(actionButton("get_plot_data", "Plot New Dates"), align="center")
-              
+              )
+
             ),
             menuItem("About", tabName = "About", icon = icon("info-circle"))
             )
         ),
     dashboardBody(
         fluidPage(
+          disconnectMessage(
+            text = "Your session has timed out! Try refreshing the page.",
+            refresh = "Refresh",
+            background = "#FFFFFF",
+            colour = "#000000",##000000
+            refreshColour = "#337AB7",
+            overlayColour = "#000000",
+            overlayOpacity = 0.25,
+            width = 450,
+            top = "center",
+            size = 24,
+            css = ""
+          ),
             useShinyalert(),
             use_waiter(),
-            
+            waiter::waiter_show_on_load(html = spin_3k(),
+                                        color = transparent(0)),
         tags$head(tags$link(rel = "shortcut icon", href = "https://tarheels.live/sunnydayflood/wp-content/uploads/sites/1319/2021/02/sunny_d_icon-01-2.png"),
         tags$style(HTML('
         .skin-black .main-header .logo {
@@ -218,6 +304,10 @@ ui <- dashboardPage(
                                 
         #camera img {max-width: 100%; width: 500px; height: auto}
         
+        .nav-tabs-custom .nav-tabs li.active {
+          border-top-color: black;
+        }
+          
       '))),
         tabItems(
           
@@ -225,25 +315,20 @@ ui <- dashboardPage(
     tabItem(tabName = "Map",
         # waiter::waiter_show_on_load(),
             fluidRow(
-            leafletOutput(outputId = "m", width="100%",height="calc(100vh - 80px)"),
-            style = "z-index: 5;" ## z-index modification
-                    )
+              leafletOutput(outputId = "m", width="100%",height="calc(100vh - 80px)"),
+            )
             ), 
     
     # Tab showing selected data and time series graphs
     tabItem(tabName = "Data",
-            
             # Time series interactive plot or data table in separate tabs
+            fluidRow(uiOutput("flood_status", align="center")),
             fluidRow(
-                     tabsetPanel(
+                     tabBox(width="100%",
                      id = "data_tabs",
                      tabPanel(
                          "Plot",
-                         dygraphOutput("site_level_ts", height = "40vh"),
-
-                         # uiOutput("site_data_panel"),
-                         br(),
-                         br(),
+                         highchartOutput("site_level_ts", height = "50vh", width = "100%"),
                          wellPanel(fluidRow(column(4,
                                                    
                                                    uiOutput("date_filter", align = "center"),
@@ -251,22 +336,19 @@ ui <- dashboardPage(
                                                          "center")
                          ),
                          column(4, 
-                                selectInput(inputId = "elev_datum", label ="Elevation Datum", choices = c("Road","NAVD88"), selected = "Road")),
-                         column(4))) #leafletOutput(outputId = "m2", height = "30vh")
+                                selectInput(inputId = "elev_datum", label ="Elevation Datum", selectize = F,choices = c("Road","NAVD88"), selected = "Road")),
+                         column(4))) 
                             ),
-                     # tabPanel(
-                     #     "Table",
-                     #      DT::dataTableOutput("site_data")
-                     #        ),
+                     tabPanel(
+                       "Site Description",
+                       h3("Site description coming soon"),
+                       actionButton("view_on_map_wl", label = "View site on map", icon = icon("map"))
+                     ),
                      tabPanel(
                         "Download",
                         h3("Click the button below to download the selected data.", align="center"),
                         p("Data will be downloaded as a .csv file named",strong("site name_minimum date_maximum date.csv"),align="center"),
                         div(downloadButton("downloadData", "Download Selected Data", class = "download_button"), align="center")
-                     ),
-                     tabPanel(
-                       "Site Description",
-                       h3("[Site description goes here]")
                      )
                                 )
                     )
@@ -287,13 +369,27 @@ ui <- dashboardPage(
               ),
               column(4, 
                      h3("Additional controls coming soon!")),
-              column(4))))))
+              column(4)))),
+              tabPanel(
+                "Site Description",
+                h3("Site description coming soon"),
+                actionButton("view_on_map_camera", label = "View site on map", icon = icon("map"))
+                
+              )
+              
+              ))
             
             ),
     tabItem(tabName = "About",
             fluidRow(
-              h1("About the project"),
-              p("Learn about the project by visiting the", a("Project Website", href = "https://tarheels.live/sunnydayflood/"))
+              h1("The Sunny Day Flooding Project"),
+              p("We are a group of researchers from",strong("UNC Chapel Hill"), "and", strong("NC State"), "that work with NC communities to measure, model, and better understand the causes and impacts of chronic flooding."),
+              strong("Visit our", a("Project Website", href = "https://tarheels.live/sunnydayflood/"), "to learn more about the project"),
+              
+              h1("Data Viewer"),
+              p("This data viewer shows real-time water level data and pictures from our study sites."),
+              p("We are constantly optimizing the data viewer and would love to hear your feedback about the site."),
+              strong("Send us an ", a("email",href = "mailto:sunnydayflood@gmail.com"), "with any constructive comments!")
             ))
                 )
                 )
@@ -313,7 +409,7 @@ server <- function(input, output, session) {
     # Initialize wait screen for image rendering
     w2 <- Waiter$new(id="camera",
                     html = spin_3k(),
-                    color = transparent(.75))   
+                    color = transparent(.75)) 
     
     # Setup date filter for Data tab sidebar UI
     output$date_filter <- renderUI(
@@ -321,7 +417,8 @@ server <- function(input, output, session) {
         'dateRange',
         label = 'Date range input: yyyy-mm-dd',
         start = Sys.Date() - 2,
-        end = Sys.Date() + 1
+        end = Sys.Date() + 1,
+        max = Sys.Date() + 3
       )
     )
     
@@ -337,10 +434,11 @@ server <- function(input, output, session) {
     
     # Popup on load to display info
     shinyalert(title = "Welcome to the data viewer! (beta)",
-               text = "Here you can view real-time data from Sunny Day Flooding Project monitoring sites.",
+               text = "Here you can view real-time data from Sunny Day Flooding Project monitoring sites.\n\n Data and images are preliminary and for informational purposes only",
                closeOnClickOutside = FALSE,
                showConfirmButton = T,
                confirmButtonCol = "#fbb040",
+               confirmButtonText = "OK",
                type = "info",
                animation=F,
                size = "s")
@@ -352,9 +450,11 @@ server <- function(input, output, session) {
       collect() %>%
       left_join(database %>%
                   group_by(sensor_ID) %>%
+                  filter(qa_qc_flag == F) %>% 
                   filter(date == max(date, na.rm=T)) %>% 
                   collect(),
                 by=c("place","sensor_ID", "sensor_elevation","road_elevation")) %>%
+      mutate(date_lst = lubridate::with_tz(date, tzone = "America/New_York")) %>% 
       sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
       mutate(
         html_popups = paste0( 
@@ -362,18 +462,41 @@ server <- function(input, output, session) {
               '<h3 align="center"><strong>Site ',sensor_ID,'</h3></strong>',
           '<h4 align="center">Last level:</h4>',
           '<h3 align="center">',round(road_water_level, digits = 2),'</h3>',
-          '<p align="center">',date,'</p>',
+          '<p align="center">',paste0(format(date_lst, "%I:%M %p", usetz = T)," - ",format(date_lst, "%b %d, %Y")),'</p>',
           '<p align="center">Click to view data at this site</p>'
         )
-      )
+      ) %>% 
+      mutate(flood_status = road_water_level > (road_elevation - alert_threshold))
       
     camera_locations <- con %>% 
       tbl("camera_locations") %>%
       collect() %>% 
-      sf::st_as_sf(coords = c("lng", "lat"), crs = 4269)
+      left_join(con %>% 
+                  tbl("photo_info") %>% 
+                  filter(DateTimeOriginalUTC == max(DateTimeOriginalUTC, na.rm=T)) %>% 
+                  collect(), by = c("camera_ID")) %>% 
+      mutate(date_lst = lubridate::with_tz(DateTimeOriginalUTC , tzone = "America/New_York")) %>% 
+      sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>% 
+      mutate(
+        html_popups = paste0( 
+          '<div>',
+          '<h3 align="center"><strong>Camera ',camera_ID,'</h3></strong>',
+          '<h4 align="center">Last picture:</h4>',
+          '<h4 align="center">',paste0(format(date_lst, "%I:%M %p", usetz = T)," - ",format(date_lst, "%b %d, %Y")),'</h4>',
+          '<p align="center">Click to view this camera</p>'
+        )
+      )
     
     # Labels for sensor map 1
     sensor_locations_labels <- as.list(sensor_locations$html_popups)
+    
+    # Labels for sensor map 1 camera
+    camera_locations_labels <- as.list(camera_locations$html_popups)
+    
+    
+    # Load NOAA Beaufort water level data
+    third_party_raw_data <- beaufort_wl() %>% 
+      rbind(beaufort_wl_predictions())
     
     # Set the reactive values that will be updated by user inputs
     reactive_selection <- reactiveValues(overall_data_sensor = sensor_locations$sensor_ID[1],
@@ -386,9 +509,9 @@ server <- function(input, output, session) {
                                          )
     
    reactive_min_date <- reactiveVal()
-   reactive_min_date(Sys.Date() - 2)
+   reactive_min_date((Sys.Date() - 2) %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
    reactive_max_date <- reactiveVal()
-   reactive_max_date(Sys.Date()+1)
+   reactive_max_date((Sys.Date() + 1) %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
     
     observeEvent(input$get_plot_data,{
       data_n <- 10 * 24 * (input$dateRange[2] - input$dateRange[1])
@@ -399,9 +522,11 @@ server <- function(input, output, session) {
                                text="Please select a shorter time span. Maximum request is 30 days .")
       }
       if(data_n <= 7440){
-        reactive_min_date(input$dateRange[1])
-        reactive_max_date(input$dateRange[2])
-      }
+
+        reactive_min_date(input$dateRange[1] %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
+        reactive_max_date(input$dateRange[2] %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
+      # print(reactive_min_date())
+        }
     })
        
     # Reactive value that stores the data from the selected sensor site, filtered by date range
@@ -409,10 +534,19 @@ server <- function(input, output, session) {
       req(input$data_sensor)
       database %>%
         filter(sensor_ID %in% !!input$data_sensor) %>%
-        filter(date >= !!reactive_min_date() & date < !!reactive_max_date()) %>% # 
+        filter(date >= !!reactive_min_date() & date < !!reactive_max_date(),
+               qa_qc_flag == F) %>% # 
         collect()
     })
     
+    third_party_data <- reactive({
+      req(input$data_sensor, input$data_location)
+      
+      third_party_raw_data %>% 
+        filter(location %in% input$data_location) %>% 
+        filter(date >= !!reactive_min_date() & date < !!reactive_max_date())
+      
+    })
 
     output$downloadData <- downloadHandler(
       filename = function() {
@@ -425,22 +559,64 @@ server <- function(input, output, session) {
     
     # Input drop-downs menus for data page
     output$firstSelection <- renderUI({
-        selectInput("data_location", "Select a location", choices = unique(sensor_locations$place), selected = reactive_selection$overall_data_location, selectize = T)
+        selectInput("data_location", "Select a location", choices = unique(sensor_locations$place), selected = reactive_selection$overall_data_location, selectize = F)
     })
 
     output$secondSelection <- renderUI({
-        selectInput("data_sensor", "Select a sensor", choices = reactive_selection$overall_data_sensor_choices, selected = reactive_selection$overall_data_sensor, selectize = T,multiple = F)
+        selectInput("data_sensor", "Select a sensor", choices = reactive_selection$overall_data_sensor_choices, selected = reactive_selection$overall_data_sensor, selectize = F,multiple = F)
     })
 
     output$firstCameraSelection <- renderUI({
-      selectInput("camera_location", "Select a location", choices = unique(camera_locations$place), selected = reactive_selection$overall_camera_location, selectize = T)
+      selectInput("camera_location", "Select a location", choices = unique(camera_locations$place), selected = reactive_selection$overall_camera_location, selectize = F)
     })
     
     output$secondCameraSelection <- renderUI({
-      selectInput("camera_ID", "Select a camera", choices = reactive_selection$overall_camera_choices, selected = reactive_selection$overall_camera_ID, selectize = T,multiple = F)
+      selectInput("camera_ID", "Select a camera", choices = reactive_selection$overall_camera_choices, selected = reactive_selection$overall_camera_ID, selectize = F,multiple = F)
     })
     
+    flood_status_reactive <- reactive({
+      req(input$data_sensor)
+      status <- sensor_locations %>% filter(sensor_ID == input$data_sensor) %>% pull(flood_status)
+      # print(status)
+      return(status)
+    })
+    
+    time_since_last_measurement <- reactive({
+      req(input$data_sensor)
+      last_datetime <- sensor_locations %>% filter(sensor_ID == input$data_sensor) %>% pull(date)
+      time_difference <- time_length(((Sys.time() %>% with_tz("UTC"))-last_datetime), unit="minute")
+      # print(time_difference)
+      return(round(time_difference))
+    })
+    
+    
+    # showing the banner of flood alert status
+    output$flood_status <- renderUI({
+      if(flood_status_reactive()){
+        if(time_since_last_measurement() < 120){
+          div(width = "100%", style="background-color:#e1142c;height:25px;padding:2.5px 2.5px;margin-bottom:5px", 
+              p("Status: ",strong("FLOODING",style="color:white;"),with_tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely on or near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+        }
+        if(time_since_last_measurement() >= 120){
+          div(width = "100%", style="background-color:#838386;height:25px;padding:2.5px 2.5px;margin-bottom:5px", 
+              p("Status: ",strong("UNKNOWN",style="color:white;"),with_tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely on or near the road surface"), ", but the sensor has not reported water level for", strong(time_since_last_measurement()), " minutes.", align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+        }
+      }
+      
+      if(!flood_status_reactive()){
+        if(time_since_last_measurement() <= 32){
+          div(width = "100%", style="background-color:#48bf84;height:25px;padding:2.5px 2.5px;margin-bottom:5px", 
+              p("Status: ",strong("NOT FLOODING",style="color:white;"),with_tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely not near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+        }
+        if(time_since_last_measurement() > 32){
+          div(width = "100%", style="background-color:#838386;height:25px;padding:2.5px 2.5px;margin-bottom:5px",
+              p("Status: ",strong("UNKNOWN",style="color:white;"),with_tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely not near the road surface"), ", but the sensor has not reported water level for", strong(time_since_last_measurement()), " minutes.", align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+        }
+      }
+    })
+
     # Create initial map for "map" tab 
+
     output$m <-renderLeaflet(leaflet() %>%
                                  addProviderTiles(group = "Positron (default)",provider = providers$CartoDB.Positron) %>%
                                  addProviderTiles(group = "Dark Matter",provider = providers$CartoDB.DarkMatter) %>%
@@ -455,7 +631,7 @@ server <- function(input, output, session) {
                                                   clusterId = "place",
                                                   layerId = sensor_locations$sensor_ID,
                                                   color = "black", fillColor = ~pal(road_water_level), fillOpacity = 1) %>% 
-                                 leaflet::addLegend('bottomright', pal = pal, values = c(-2,2),
+                                 leaflet::addLegend('bottomright', pal = pal, values = c(-2,0),
                                            title = 'Water level<br>relative to<br>surface (ft)',
                                            opacity = 1) %>% 
                                 # addAwesomeMarkers(data = camera_locations, icon=map_icon, label=~as.character(camera_ID)) %>% 
@@ -484,8 +660,70 @@ server <- function(input, output, session) {
     
     # If city name is selected on the map tab, fly to the location
     observeEvent(input$city_name,{
+      
+      if(input$city_name == ""){
+        leafletProxy(mapId = "m") %>% 
+          setView(lng = -77.360784, lat = 34.576053, zoom = 8)
+      }
+      
+      if(input$city_name != ""){
         leafletProxy(mapId = "m") %>% 
             setView(lng = map1_selected_location()[1], lat = map1_selected_location()[2], zoom=16)
+      }
+    })
+    
+    
+    observeEvent(input$view_on_map_wl,{
+      updateNavbarPage(session, 
+                       inputId = "nav",
+                       selected = "Map")
+      
+      sensor_location_selected <- sensor_locations %>% 
+        filter(sensor_ID == input$data_sensor) 
+      
+      sensor_location_selected_coords <- sensor_location_selected %>% 
+        sf::st_coordinates()
+      
+      sensor_location_selected_label <-  as.list(str_remove(sensor_location_selected$html_popups,"<p align=\"center\">Click to view data at this site</p>"))
+      
+      leafletProxy(mapId = "m") %>%
+        setView(lng = sensor_location_selected_coords[1], lat = sensor_location_selected_coords[2], zoom = 18) %>% 
+        addPopups(lng = sensor_location_selected_coords[1], lat = sensor_location_selected_coords[2], lapply(sensor_location_selected_label,HTML),
+                  options = popupOptions(closeButton = T, closeOnClick = T)
+        )
+      
+      updateRadioButtons(session, 
+                         inputId = "map_layers", 
+                         choices = list("Water Level Sensors" = 1, "Flood Cams" = 2), 
+                         selected = 1)
+        
+    })
+    
+    # Use this for cameras
+    observeEvent(input$view_on_map_camera,{
+      updateNavbarPage(session,
+                       inputId = "nav",
+                       selected = "Map")
+      
+      camera_location_selected <- camera_locations %>%
+        filter(camera_ID == input$camera_ID) 
+      
+      camera_location_selected_coords <- camera_location_selected %>% 
+        sf::st_coordinates()
+      
+      camera_location_selected_label <-  as.list(str_remove(camera_location_selected$html_popups,"<p align=\"center\">Click to view this camera</p>"))
+      
+      leafletProxy(mapId = "m") %>%
+        setView(lng = camera_location_selected_coords[1], lat = camera_location_selected_coords[2], zoom = 18) %>%
+        addPopups(lng = camera_location_selected_coords[1], lat = camera_location_selected_coords[2], camera_location_selected_label,
+                  options = popupOptions(closeButton = T, closeOnClick = T)
+        )
+      
+      updateRadioButtons(session, 
+                         inputId = "map_layers", 
+                         choices = list("Water Level Sensors" = 1, "Flood Cams" = 2), 
+                         selected = 2)
+      
     })
     
     # Make camera icon for camera layer. Can be moved somewhere better
@@ -513,7 +751,9 @@ server <- function(input, output, session) {
       if(input$map_layers == 2){
         leafletProxy(mapId = "m") %>% 
           clearGroup("sensor_site") %>% 
-          addAwesomeMarkers(data = camera_locations, icon=map_icon, label=~as.character(camera_ID), group = "camera_site",
+          addAwesomeMarkers(data = camera_locations, icon=map_icon, group = "camera_site",
+                            label = lapply(camera_locations_labels,HTML),
+                            labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
                             clusterOptions = markerClusterOptions(),
                             clusterId = "place",
                             layerId = sensor_locations$sensor_ID,
@@ -543,11 +783,15 @@ server <- function(input, output, session) {
       if(input$map_layers == 1){
           reactive_selection$overall_data_sensor <- input$m_marker_click
           reactive_selection$overall_data_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
+          reactive_selection$overall_camera_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
+          
       }
       
       if(input$map_layers == 2){
         reactive_selection$overall_camera <- input$m_marker_click
         reactive_selection$overall_camera_location <- unique(camera_locations$place[camera_locations$camera_ID == input$m_marker_click$id])
+        reactive_selection$overall_data_location <- unique(camera_locations$place[camera_locations$camera_ID == input$m_marker_click$id])
+        
       }
     })
 
@@ -565,29 +809,53 @@ server <- function(input, output, session) {
           }
         })
         
-        
+        plot_missing_data_shading <- reactive({
+          req(input$data_sensor, time_since_last_measurement())
+          if(time_since_last_measurement() >= 32){
+            return(datetime_to_timestamp(sensor_locations %>% filter(sensor_ID == input$data_sensor) %>% pull(date)))
+          }
+          else(return(NULL))
+        })
         
         # Render plot with selected data
         observe({
+          if(nrow(sensor_data()) == 0){
+            # Popup on load to display info
+            shinyalert::shinyalert(type="error", 
+                                   title="No data during the selected time range!",
+                                   text="Please select a different time span.",
+                                   animation = T)
+            
+          }
           
+          if(nrow(sensor_data()) != 0){
           # Set min and max date using reactive values from date_filter
-          min_date_plot <- as.POSIXct.Date(reactive_min_date())
-          max_date_plot <- as.POSIXct.Date(reactive_max_date())
-          
+          min_date_plot <- reactive_min_date() 
+          max_date_plot <- reactive_max_date() 
+
           # use spinner for load
           w$show()
           
           # Render the plot
-          output$site_level_ts <-  renderDygraph({
-            
+          output$site_level_ts <-  renderHighchart({
+            req(nrow(sensor_data()>0))
             # Assign reactive data to a normal object for dygraphs
             plot_sensor_data <- sensor_data()
             
             plot_sensor_stats <- sensor_locations %>% 
               filter(sensor_ID %in% plot_sensor_data$sensor_ID)
             
+            plot_3rd_party_data <- third_party_data()
+            
+            plot_3rd_party_data_obs <- plot_3rd_party_data %>% 
+              filter(notes == "observation")
+            
+            plot_3rd_party_data_predict <- plot_3rd_party_data %>% 
+              filter(notes == "prediction")
+            
             # Plot Road datum
             if(input$elev_datum == "Road") {
+              # Measured water level
               x <- xts::xts(plot_sensor_data$road_water_level,
                             order.by = plot_sensor_data$date,
                             tzone = "UTC")
@@ -595,11 +863,26 @@ server <- function(input, output, session) {
               tzone(x) <- "America/New_York"
               road_elevation_limit <- 0
               sensor_elevation_limit <- plot_sensor_stats$sensor_elevation - plot_sensor_stats$road_elevation
-              y_axis_range <- c(sensor_elevation_limit-0.5, ifelse(max(x[1], na.rm=T) > road_elevation_limit, max(x[1], na.rm=T) + 0.5, road_elevation_limit+0.5))
+              y_axis_range <- c(sensor_elevation_limit-0.5, ifelse(max(x, na.rm=T) > road_elevation_limit, max(x, na.rm=T) , road_elevation_limit+0.25))
+              
+              # 3rd party measured water level
+              x3rd_party <- xts::xts((plot_3rd_party_data_obs$level-plot_sensor_stats$road_elevation),
+                                     order.by = plot_3rd_party_data_obs$date,
+                                     tzone = "UTC")
+              
+              tzone(x3rd_party) <- "America/New_York"
+              
+              # 3rd party predicted water level
+              x3rd_party_predict <- xts::xts((plot_3rd_party_data_predict$level-plot_sensor_stats$road_elevation),
+                                     order.by = plot_3rd_party_data_predict$date,
+                                     tzone = "UTC")
+              
+              tzone(x3rd_party) <- "America/New_York"
             }
             
             # Plot NAVD88 Datum
             if(input$elev_datum == "NAVD88") {
+              # measured water level
               x <- xts::xts(plot_sensor_data$sensor_water_level,
                             order.by = plot_sensor_data$date,
                             tzone = "UTC")
@@ -607,46 +890,141 @@ server <- function(input, output, session) {
               tzone(x) <- "America/New_York"
               road_elevation_limit <- plot_sensor_stats$road_elevation
               sensor_elevation_limit <- plot_sensor_stats$sensor_elevation
-              y_axis_range <- c(sensor_elevation_limit-0.5, ifelse(max(x[1], na.rm=T) > road_elevation_limit, max(x[1], na.rm=T) + 0.5, road_elevation_limit + 0.5))
+              y_axis_range <- c(sensor_elevation_limit-0.5, ifelse(max(x, na.rm=T) > road_elevation_limit, max(x, na.rm=T) , road_elevation_limit +0.25 ))
               
+              # third party measured water level
+              x3rd_party <- xts::xts(plot_3rd_party_data_obs$level,
+                                     order.by = plot_3rd_party_data_obs$date,
+                                     tzone = "UTC")
+              
+              tzone(x3rd_party) <- "America/New_York"
+              
+              # 3rd party predicted water level
+              x3rd_party_predict <- xts::xts(plot_3rd_party_data_predict$level,
+                                             order.by = plot_3rd_party_data_predict$date,
+                                             tzone = "UTC")
+              
+              tzone(x3rd_party) <- "America/New_York"
             }
             
-            dygraph(x, main = plot_sensor_stats$sensor_ID) %>%
-              dyAxis("y", label = "Water level (ft)", valueRange = y_axis_range) %>%
-              dyAxis("x", label = "Date (EST/EDT)") %>%
-              dyOptions(colors = "#3266a8",
-                        gridLineColor = "#e0e0e0",
-                        strokeWidth = 2) %>%
-              dyLimit(road_elevation_limit, color = "red", label = "Road Elevation") %>%
-              dyLimit(sensor_elevation_limit, color = "black", label = "Sensor Elevation") %>%
-              dyUnzoom() %>%
-              dyCrosshair(direction = "vertical") %>%
-              dySeries("V1", label = "Level") 
+            highchart() %>% 
+              hc_add_series(x,
+                            type="line",
+                            name="Water Level",
+                            color="#1d1d75") %>% 
+              hc_add_series(x3rd_party,
+                            name = unique(plot_3rd_party_data_obs$entity),
+                            type="line",
+                            color="green",
+                            visible = F) %>% 
+              hc_add_series(x3rd_party_predict,
+                            name = unique(plot_3rd_party_data_predict$entity),
+                            type="line",
+                            color="purple",
+                            visible = F) %>% 
+              hc_chart(zoomType= "x",
+                       backgroundColor = "#FFFFFF"
+                       )%>% 
+              hc_plotOptions(series = list(lineWidth = 2,
+                                           allowPointSelect = TRUE,
+                                           states = list(hover = list(lineWidth = 2.5)))) %>% 
+              hc_tooltip(crosshairs = TRUE,
+                         valueDecimals = 2,
+                         xDateFormat = "%I:%M %p, %b %e, %Y"
+                         
+                         # borderWidth = 2
+                         # sort = TRUE,
+                         # table = TRUE
+                         ) %>%  
+              hc_xAxis(type = "datetime",
+                       max = max_date_plot %>% datetime_to_timestamp(),
+                       min = min_date_plot %>% datetime_to_timestamp(),
+                       dateTimeLabelFormats = list(
+                         day = "%b %e",
+                         minute = "%I:%M %p",
+                         hour = "%I:%M %p"
+                       ),
+                       plotBands = list(
+                         list(
+                           from = plot_missing_data_shading(),
+                           to = datetime_to_timestamp(Sys.time() %>% with_tz("UTC")),
+                           color = hex_to_rgba("black", 0.1),
+                           label = list(text = "Missing data", 
+                                        style = list(color = 'grey', fontWeight = 'bold', fontSize = 14),
+                                        y = -5),
+                           # the zIndex is used to put the label text over the grid lines 
+                           zIndex = 1
+                          
+                         )
+                       ),
+                       plotLines = list(list(value = datetime_to_timestamp(Sys.time() %>% with_tz("UTC")),
+                            # dashStyle = "longdash",
+                            color="black",
+                            width = 1,
+                            zIndex = 4,
+                            label = list(text = "Current time",
+                                         style = list( color = 'black', fontWeight = 'bold'))))) %>% 
+              hc_yAxis(max = y_axis_range[2],
+                       title = list(text = "Water Level (ft)"),
+                       # min = y_axis_range[1],
+                       plotLines = list(
+                list(value =road_elevation_limit,
+                     dashStyle = "longdash",
+                     color="red",
+                     width = 1,
+                     zIndex = 4,
+                     label = list(text = "Road Elevation",
+                                  style = list( color = 'red', fontWeight = 'bold'))),
+                list(value = sensor_elevation_limit,
+                     dashStyle = "longdash",
+                     color="black",
+                     width = 1,
+                     zIndex = 4,
+                     label = list(text = "Sensor Elevation",
+                                  style = list( color = 'black', fontWeight = 'bold'))))) %>% 
+              hc_exporting(enabled = TRUE,
+                           filename = paste0(plot_sensor_stats$sensor_ID,"_",min_date_plot %>% with_tz("America/New_York"),"_to_",max_date_plot %>% with_tz("America/New_York")),
+                           showTable = F,
+                           buttons = list(contextButton = list(symbolSize = 20,
+                                                               x= -20,
+                                                               menuItems = list("viewFullscreen", "printChart", "separator", "downloadPNG")))) %>% 
+              hc_title(text =plot_sensor_stats$sensor_ID,
+                       floating = F)
+            # 
+            # dygraph(x, main = plot_sensor_stats$sensor_ID) %>%
+            #   dyAxis("y", label = "Water level (ft)", valueRange = y_axis_range) %>%
+            #   dyAxis("x", label = "Date (EST/EDT)", valueRange = c(min_date_plot, max_date_plot), rangePad=5) %>%
+            #   dyOptions(colors = "#3266a8",
+            #             gridLineColor = "#e0e0e0",
+            #             strokeWidth = 2) %>%
+            #   dyLimit(road_elevation_limit, color = "red", label = "Road Elevation") %>%
+            #   dyLimit(sensor_elevation_limit, color = "black", label = "Sensor Elevation") %>%
+            #   dyUnzoom() %>%
+            #   dyCrosshair(direction = "vertical") %>%
+            #   dySeries("V1", label = "Level") 
             
           })
           
-
-        # # Render table with selected data
-        #     output$site_data <- renderDataTable(
-        #       sensor_data() %>% 
-        #         mutate(date_EST_EDT = lubridate::with_tz(date, tzone = "America/New_York")) %>% 
-        #         dplyr::select(date, road_water_level, sensor_water_level) %>% 
-        #       mutate_if(.predicate = is.numeric, .funs = "round", digits = 2)
-        #     )
-            
           # Hide spinner after load
             w$hide()
+          }
         })
         
         observe({
           req(input$camera_ID)
           w2$show()
             output$camera <- renderImage({
-              # A temp file to save the output. It will be deleted after renderImage
-              # sends it, because deleteFile=TRUE.
               outfile <- tempfile(fileext='.jpg')
+              
+              time <- con %>% 
+                tbl("photo_info") %>% 
+                filter(DateTimeOriginalUTC == max(DateTimeOriginalUTC, na.rm=T)) %>% 
+                pull(DateTimeOriginalUTC) %>% 
+                lubridate::with_tz(tzone="America/New_York")
 
               magick::image_read(paste0("https://photos-sunnydayflood.cloudapps.unc.edu/public/",input$camera_ID,".jpg")) %>% 
+                image_annotate(paste0(format(time, "%I:%M %p", usetz = T)," - ",format(time, "%b %d, %Y")), size = 40, color = "white", boxcolor = "black",
+                               degrees = 0, gravity = "north") %>% 
                 magick::image_write(path = outfile)
               
               # Return a list
@@ -657,6 +1035,7 @@ server <- function(input, output, session) {
             }, deleteFile = T)
             w2$hide()
         })
+        waiter::waiter_hide()
 }
 
 # Run the application
