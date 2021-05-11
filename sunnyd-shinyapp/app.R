@@ -23,8 +23,9 @@ library(shinydisconnect)
 library(tippy)
 library(httr)
 
+
 # Source env variables if working on desktop
-# source("C:/Users/Adam Gold/Desktop/postgres_keys.R")
+source("C:/Users/Adam Gold/Desktop/postgres_keys.R")
 
 # City names to sho<- on initial load map
 place_names <- c("Beaufort, North Carolina") #, "Carolina Beach, North Carolina"
@@ -75,69 +76,91 @@ global$useUTC <- FALSE
 global$timezoneOffset <- -300
 options(highcharter.global = global)
 
-# Beaufort NOAA wl functions
-beaufort_wl <- function() {
-  request <-
-    httr::GET(
-      url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
-      query = list(
-        "station" = "8656483",
-        "range" = "336",
-        "product" = "water_level",
-        "units" = "english",
-        "datum" = "NAVD",
-        "time_zone" = "gmt",
-        "format" = "json",
-        "application" = "UNC_Institute_for_the_Environment, https://github.com/acgold"
-      )
-    )
-  
-  latest_noaa_wl <-
-    tibble::as_tibble(jsonlite::fromJSON(rawToChar(request$content))$data)
-  colnames(latest_noaa_wl)[1:2] <- c("date", "level_ft_navd88")
-  
-  latest_noaa_wl <- latest_noaa_wl %>%
-    transmute(
-      location = "Beaufort, North Carolina",
-      date = ymd_hm(date),
-      level = as.numeric(level_ft_navd88),
-      entity = "NOAA Observed",
-      notes = "observation"
-    )
-  return(latest_noaa_wl)
+get_thirdparty_metadata <- function(location){
+  if(location == "Beaufort, North Carolina"){
+    return(c("obs","pred"))
+  }
 }
 
-beaufort_wl_predictions <- function() {
-  request <-
-    httr::GET(
-      url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
-      query = list(
-        "station" = "8656483",
-        "end_date" = format(Sys.Date() + 3,"%Y%m%d"),
-        "range" = "408",
-        "product" = "predictions",
-        "units" = "english",
-        "datum" = "NAVD",
-        "time_zone" = "gmt",
-        "format" = "json",
-        "application" = "UNC_Institute_for_the_Environment, https://github.com/acgold"
-      )
-    )
-  
-  latest_noaa_wl_predictions <-
-    tibble::as_tibble(jsonlite::fromJSON(rawToChar(request$content))$predictions)
-  colnames(latest_noaa_wl_predictions)[1:2] <- c("date", "predictions_ft_navd88")
-  
-  latest_noaa_wl_predictions <- latest_noaa_wl_predictions %>%
-    transmute(
-      location = "Beaufort, North Carolina",
-      date = ymd_hm(date),
-      level = as.numeric(predictions_ft_navd88),
-      entity = "NOAA Predicted",
-      notes = "prediction"
-    )
-  return(latest_noaa_wl_predictions)
+# Define functions to get local water levels from each location
+get_thirdparty_wl <- function(location, type, min_date, max_date) {
+  # Beaufort uses NOAA for water levels and predictions
+  if(location == "Beaufort, North Carolina"){
+      request <-
+        httr::GET(
+          url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
+          query = list(
+            "station" = "8656483",
+            "begin_date" = min_date,
+            "end_date" = max_date,
+            "product" = ifelse(type == "obs","water_level","predictions"),
+            "units" = "english",
+            "datum" = "NAVD",
+            "time_zone" = "gmt",
+            "format" = "json",
+            "application" = "UNC_Institute_for_the_Environment, https://github.com/acgold"
+          )
+        )
+      
+      if(type == "obs") {
+        wl <-
+          tibble::as_tibble(jsonlite::fromJSON(rawToChar(request$content))$data)
+        colnames(wl)[1:2] <- c("date", "level_ft_navd88")
+      }
+      
+      if(type == "pred") {
+        wl <-
+          tibble::as_tibble(jsonlite::fromJSON(rawToChar(request$content))$predictions)
+        colnames(wl)[1:2] <- c("date", "level_ft_navd88")
+      }
+      
+      if(nrow(wl) == 0){
+        stop("No data available")
+      }
+      
+      wl <- wl %>%
+        transmute(
+          location = "Beaufort, North Carolina",
+          date = ymd_hm(date),
+          level = as.numeric(level_ft_navd88),
+          entity = ifelse(type == "obs", "NOAA Observed","NOAA Predictions"),
+          notes = ifelse(type == "obs", "observation","prediction")
+        )
+      return(wl)
+    }
 }
+
+# beaufort_wl_predictions <- function() {
+#   request <-
+#     httr::GET(
+#       url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
+#       query = list(
+#         "station" = "8656483",
+#         "end_date" = format(Sys.Date() + 3,"%Y%m%d"),
+#         "range" = "408",
+#         "product" = "predictions",
+#         "units" = "english",
+#         "datum" = "NAVD",
+#         "time_zone" = "gmt",
+#         "format" = "json",
+#         "application" = "UNC_Institute_for_the_Environment, https://github.com/acgold"
+#       )
+#     )
+#   
+#   latest_noaa_wl_predictions <-
+#     tibble::as_tibble(jsonlite::fromJSON(rawToChar(request$content))$predictions)
+#   colnames(latest_noaa_wl_predictions)[1:2] <- c("date", "predictions_ft_navd88")
+#   
+#   latest_noaa_wl_predictions <- latest_noaa_wl_predictions %>%
+#     transmute(
+#       location = "Beaufort, North Carolina",
+#       date = ymd_hm(date),
+#       level = as.numeric(predictions_ft_navd88),
+#       entity = "NOAA Predicted",
+#       notes = "prediction"
+#     )
+#   return(latest_noaa_wl_predictions)
+# }
 
 #------------------------ Define UI ---------------------------------------
 ui <- dashboardPage(
@@ -358,18 +381,22 @@ ui <- dashboardPage(
               tabsetPanel(
                 tabPanel(
                   "Pictures",
-                     imageOutput(outputId = "camera")
-                    ,
-            
-              wellPanel(fluidRow(column(4
-                                        # ,
-                                        # uiOutput("date_filter_photos", align = "center"),
-                                        # div(actionButton("get_picture", "View Picture"), align =
-                                              # "center")
-              ),
-              column(4, 
-                     h3("Additional controls coming soon!")),
-              column(4)))),
+                  fluidRow(column(6,
+                     imageOutput(outputId = "camera"))#,
+                     # column(6,
+                     #        h1("Water detected?",tippy(icon("info-circle",style="font-size:16px"), tooltip = div(h5("We are using machine learning to detect water on the road surface using our flood cams.",br(),br(),"The model used here is trained to distinguish pictures that have water in them from those that do not. Cars, salt water stains, sun glare, and other features in the photos can decrease the accuracy of the model.",br(),br(),"This model is still in development and is for informational purposes only."), style = "text-align:left"))),
+                     #        div(p("In Development",style="color:white;text-align: center"),style="background-color:#fbb040;width:125px;border-radius: 20px"),
+                     #        p("The chart below shows the probability that water has been detected in this picture with our machine learning model"),
+                  # highchartOutput(outputId ="tf_predict")))
+                  # fluidRow(p("For questions about this model, email...."))
+
+                  # wellPanel(fluidRow(column(6),
+                  #                    column(6))
+                  )),
+                     # ,
+                     # uiOutput("date_filter_photos", align = "center"),
+                     # div(actionButton("get_picture", "View Picture"), align =
+                     # "center"))))),
               tabPanel(
                 "Site Description",
                 h3("Site description coming soon"),
@@ -394,7 +421,8 @@ ui <- dashboardPage(
                 )
                 )
                 )
-                )
+)
+                
 
 
 
@@ -492,12 +520,7 @@ server <- function(input, output, session) {
     
     # Labels for sensor map 1 camera
     camera_locations_labels <- as.list(camera_locations$html_popups)
-    
-    
-    # Load NOAA Beaufort water level data
-    third_party_raw_data <- beaufort_wl() %>% 
-      rbind(beaufort_wl_predictions())
-    
+      
     # Set the reactive values that will be updated by user inputs
     reactive_selection <- reactiveValues(overall_data_sensor = sensor_locations$sensor_ID[1],
                                          overall_data_location = unique(sensor_locations$place)[1],
@@ -522,10 +545,8 @@ server <- function(input, output, session) {
                                text="Please select a shorter time span. Maximum request is 30 days .")
       }
       if(data_n <= 7440){
-
         reactive_min_date(input$dateRange[1] %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
         reactive_max_date(input$dateRange[2] %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
-      # print(reactive_min_date())
         }
     })
        
@@ -537,15 +558,6 @@ server <- function(input, output, session) {
         filter(date >= !!reactive_min_date() & date < !!reactive_max_date(),
                qa_qc_flag == F) %>% # 
         collect()
-    })
-    
-    third_party_data <- reactive({
-      req(input$data_sensor, input$data_location)
-      
-      third_party_raw_data %>% 
-        filter(location %in% input$data_location) %>% 
-        filter(date >= !!reactive_min_date() & date < !!reactive_max_date())
-      
     })
 
     output$downloadData <- downloadHandler(
@@ -595,22 +607,22 @@ server <- function(input, output, session) {
       if(flood_status_reactive()){
         if(time_since_last_measurement() < 120){
           div(width = "100%", style="background-color:#e1142c;height:25px;padding:2.5px 2.5px;margin-bottom:5px", 
-              p("Status: ",strong("FLOODING",style="color:white;"),with_tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely on or near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+              p("Status: ",strong("FLOODING",style="color:white;"),tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely on or near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
         }
         if(time_since_last_measurement() >= 120){
           div(width = "100%", style="background-color:#838386;height:25px;padding:2.5px 2.5px;margin-bottom:5px", 
-              p("Status: ",strong("UNKNOWN",style="color:white;"),with_tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely on or near the road surface"), ", but the sensor has not reported water level for", strong(time_since_last_measurement()), " minutes.", align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+              p("Status: ",strong("UNKNOWN",style="color:white;"),tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely on or near the road surface"), ", but the sensor has not reported water level for", strong(time_since_last_measurement()), " minutes.", align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
         }
       }
       
       if(!flood_status_reactive()){
         if(time_since_last_measurement() <= 32){
           div(width = "100%", style="background-color:#48bf84;height:25px;padding:2.5px 2.5px;margin-bottom:5px", 
-              p("Status: ",strong("NOT FLOODING",style="color:white;"),with_tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely not near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+              p("Status: ",strong("NOT FLOODING",style="color:white;"),tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely not near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
         }
         if(time_since_last_measurement() > 32){
           div(width = "100%", style="background-color:#838386;height:25px;padding:2.5px 2.5px;margin-bottom:5px",
-              p("Status: ",strong("UNKNOWN",style="color:white;"),with_tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely not near the road surface"), ", but the sensor has not reported water level for", strong(time_since_last_measurement()), " minutes.", align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+              p("Status: ",strong("UNKNOWN",style="color:white;"),tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely not near the road surface"), ", but the sensor has not reported water level for", strong(time_since_last_measurement()), " minutes.", align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
         }
       }
     })
@@ -833,25 +845,20 @@ server <- function(input, output, session) {
           min_date_plot <- reactive_min_date() 
           max_date_plot <- reactive_max_date() 
 
+          plot_3rd_party_data_stats <- get_thirdparty_metadata(location = input$data_location)
+          
           # use spinner for load
           w$show()
           
           # Render the plot
           output$site_level_ts <-  renderHighchart({
+          
             req(nrow(sensor_data()>0))
             # Assign reactive data to a normal object for dygraphs
             plot_sensor_data <- sensor_data()
             
             plot_sensor_stats <- sensor_locations %>% 
               filter(sensor_ID %in% plot_sensor_data$sensor_ID)
-            
-            plot_3rd_party_data <- third_party_data()
-            
-            plot_3rd_party_data_obs <- plot_3rd_party_data %>% 
-              filter(notes == "observation")
-            
-            plot_3rd_party_data_predict <- plot_3rd_party_data %>% 
-              filter(notes == "prediction")
             
             # Plot Road datum
             if(input$elev_datum == "Road") {
@@ -865,19 +872,19 @@ server <- function(input, output, session) {
               sensor_elevation_limit <- plot_sensor_stats$sensor_elevation - plot_sensor_stats$road_elevation
               y_axis_range <- c(sensor_elevation_limit-0.5, ifelse(max(x, na.rm=T) > road_elevation_limit, max(x, na.rm=T) , road_elevation_limit+0.25))
               
-              # 3rd party measured water level
-              x3rd_party <- xts::xts((plot_3rd_party_data_obs$level-plot_sensor_stats$road_elevation),
-                                     order.by = plot_3rd_party_data_obs$date,
-                                     tzone = "UTC")
-              
-              tzone(x3rd_party) <- "America/New_York"
+              # # 3rd party measured water level
+              # x3rd_party <- xts::xts((plot_3rd_party_data_obs$level-plot_sensor_stats$road_elevation),
+              #                        order.by = plot_3rd_party_data_obs$date,
+              #                        tzone = "UTC")
+              # 
+              # tzone(x3rd_party) <- "America/New_York"
               
               # 3rd party predicted water level
-              x3rd_party_predict <- xts::xts((plot_3rd_party_data_predict$level-plot_sensor_stats$road_elevation),
-                                     order.by = plot_3rd_party_data_predict$date,
-                                     tzone = "UTC")
-              
-              tzone(x3rd_party) <- "America/New_York"
+              # x3rd_party_predict <- xts::xts((plot_3rd_party_data_predict$level-plot_sensor_stats$road_elevation),
+              #                        order.by = plot_3rd_party_data_predict$date,
+              #                        tzone = "UTC")
+              # 
+              # tzone(x3rd_party_predict) <- "America/New_York"
             }
             
             # Plot NAVD88 Datum
@@ -892,19 +899,19 @@ server <- function(input, output, session) {
               sensor_elevation_limit <- plot_sensor_stats$sensor_elevation
               y_axis_range <- c(sensor_elevation_limit-0.5, ifelse(max(x, na.rm=T) > road_elevation_limit, max(x, na.rm=T) , road_elevation_limit +0.25 ))
               
-              # third party measured water level
-              x3rd_party <- xts::xts(plot_3rd_party_data_obs$level,
-                                     order.by = plot_3rd_party_data_obs$date,
-                                     tzone = "UTC")
-              
-              tzone(x3rd_party) <- "America/New_York"
+              # # third party measured water level
+              # x3rd_party <- xts::xts(plot_3rd_party_data_obs$level,
+              #                        order.by = plot_3rd_party_data_obs$date,
+              #                        tzone = "UTC")
+              # 
+              # tzone(x3rd_party) <- "America/New_York"
               
               # 3rd party predicted water level
-              x3rd_party_predict <- xts::xts(plot_3rd_party_data_predict$level,
-                                             order.by = plot_3rd_party_data_predict$date,
-                                             tzone = "UTC")
-              
-              tzone(x3rd_party) <- "America/New_York"
+              # x3rd_party_predict <- xts::xts(plot_3rd_party_data_predict$level,
+              #                                order.by = plot_3rd_party_data_predict$date,
+              #                                tzone = "UTC")
+              # 
+              # tzone(x3rd_party_predict) <- "America/New_York"
             }
             
             highchart() %>% 
@@ -912,16 +919,16 @@ server <- function(input, output, session) {
                             type="line",
                             name="Water Level",
                             color="#1d1d75") %>% 
-              hc_add_series(x3rd_party,
-                            name = unique(plot_3rd_party_data_obs$entity),
-                            type="line",
-                            color="green",
-                            visible = F) %>% 
-              hc_add_series(x3rd_party_predict,
-                            name = unique(plot_3rd_party_data_predict$entity),
-                            type="line",
-                            color="purple",
-                            visible = F) %>% 
+              # hc_add_series(x3rd_party,
+              #               name = unique(plot_3rd_party_data_obs$entity),
+              #               type="line",
+              #               color="green",
+              #               visible = F) %>% 
+              # hc_add_series(x3rd_party_predict,
+              #               name = unique(plot_3rd_party_data_predict$entity),
+              #               type="line",
+              #               color="purple",
+              #               visible = F) %>% 
               hc_chart(zoomType= "x",
                        backgroundColor = "#FFFFFF"
                        )%>% 
@@ -1010,19 +1017,48 @@ server <- function(input, output, session) {
           }
         })
         
+        
+        observe({
+          req(plot_3rd_party_data_stats)
+          
+          if(all(c("obs","pred") %in% plot_3rd_party_data_stats)){
+            plot_3rd_party_data_obs <- get_thirdparty_wl(location = input$data_location,
+                                                         type = "obs",
+                                                         min_date = input$dateRange[1] %>% str_remove_all("-"),
+                                                         max_date = input$dateRange[2] %>% str_remove_all("-"))  
+            
+            plot_3rd_party_data_predict <- get_thirdparty_wl(location = input$data_location,
+                                                             type = "pred",
+                                                             min_date = input$dateRange[1] %>% str_remove_all("-"),
+                                                             max_date = input$dateRange[2] %>% str_remove_all("-"))
+            
+          }
+        })
         observe({
           req(input$camera_ID)
+          
+          
           w2$show()
+          
+          # realtime_img %>% 
+          #   image_scale(geometry = geometry_size_pixels(width=224,height=224,preserve_aspect = F)) %>% 
+          #   magick::image_write(path = tf_outfile)
+          
+          
             output$camera <- renderImage({
+              
               outfile <- tempfile(fileext='.jpg')
+              # tf_outfile <- tempfile(fileext='.jpg')
               
               time <- con %>% 
                 tbl("photo_info") %>% 
                 filter(DateTimeOriginalUTC == max(DateTimeOriginalUTC, na.rm=T)) %>% 
                 pull(DateTimeOriginalUTC) %>% 
                 lubridate::with_tz(tzone="America/New_York")
-
-              magick::image_read(paste0("https://photos-sunnydayflood.cloudapps.unc.edu/public/",input$camera_ID,".jpg")) %>% 
+              
+              realtime_img <- magick::image_read(paste0("https://photos-sunnydayflood.cloudapps.unc.edu/public/",input$camera_ID,".jpg")) 
+              
+              realtime_img %>% 
                 image_annotate(paste0(format(time, "%I:%M %p", usetz = T)," - ",format(time, "%b %d, %Y")), size = 40, color = "white", boxcolor = "black",
                                degrees = 0, gravity = "north") %>% 
                 magick::image_write(path = outfile)
@@ -1033,6 +1069,56 @@ server <- function(input, output, session) {
                    height = "100%")
               
             }, deleteFile = T)
+            
+            # output$tf_predict <- renderHighchart({
+            #   
+            #   req <- httr::POST("http://localhost:8000/cnn-mnist",
+            #                     body = list(enc = base64enc::base64encode(tf_outfile)), 
+            #                     encode = "json")
+            #   
+            #   prediction <- round(c(httr::content(req)),digits = 2)
+            #   
+            #   
+            #   col_stops <- data.frame(
+            #     q = c(0.4, 0.6, .8),
+            #     c = c('#48bf84','#f5bf0f','#e1142c'),
+            #     stringsAsFactors = FALSE
+            #   )
+            #   
+            #   highchart() %>%
+            #     hc_chart(type = "solidgauge") %>%
+            #     hc_pane(
+            #       startAngle = -90,
+            #       endAngle = 90,
+            #       background = list(
+            #         outerRadius = '100%',
+            #         innerRadius = '60%',
+            #         shape = "arc"
+            #       )
+            #     ) %>%
+            #     hc_tooltip(enabled = FALSE) %>% 
+            #     hc_yAxis(
+            #       stops = list_parse2(col_stops),
+            #       lineWidth = 0,
+            #       minorTickWidth = 0,
+            #       tickAmount = 2,
+            #       min = 0,
+            #       max = 100,
+            #       labels = list(y = 26, style = list(fontSize = "22px"))
+            #     ) %>%
+            #     hc_add_series(
+            #       data = prediction*100,
+            #       dataLabels = list(
+            #         y = -50,
+            #         borderWidth = 0,
+            #         format= "{y} %",
+            #         useHTML = TRUE,
+            #         style = list(fontSize = "40px")
+            #       )
+            #     ) %>% 
+            #     hc_size(height = 300)
+            #   
+            # })
             w2$hide()
         })
         waiter::waiter_hide()
