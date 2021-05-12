@@ -1,11 +1,9 @@
-# Base image https://hub.docker.com/u/rocker/
-FROM rocker/shiny:latest
+FROM rocker/shiny:4.0.5
 
 # system libraries of general use
 ## install debian packages
 RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libxml2-dev \
-    # build-essential \
     libglpk-dev \
     libjq-dev \
     libv8-dev \
@@ -29,7 +27,7 @@ RUN apt-get update && \
     apt-get clean
 
 # install packages
-RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer highcharter xts shinyalert RPostgres DBI pool dbplyr magick stringr shinydisconnect tippy httr
+RUN install2.r dplyr lubridate shinydashboard colourvalues waiter sf leaflet DT htmltools RColorBrewer highcharter xts shinyalert RPostgres DBI pool dbplyr magick stringr shinydisconnect tippy httr shinyWidgets
 
 # expose ports
 EXPOSE 3838

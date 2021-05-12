@@ -22,10 +22,11 @@ library(stringr)
 library(shinydisconnect)
 library(tippy)
 library(httr)
+library(shinyWidgets)
 
 
 # Source env variables if working on desktop
-source("C:/Users/Adam Gold/Desktop/postgres_keys.R")
+# source("C:/Users/Adam Gold/Desktop/postgres_keys.R")
 
 # City names to sho<- on initial load map
 place_names <- c("Beaufort, North Carolina") #, "Carolina Beach, North Carolina"
@@ -78,7 +79,9 @@ options(highcharter.global = global)
 
 get_thirdparty_metadata <- function(location){
   if(location == "Beaufort, North Carolina"){
-    return(c("obs","pred"))
+    return(tibble("entity"= "NOAA",
+                  "url" = "https://tidesandcurrents.noaa.gov/waterlevels.html?id=8656483",
+                  "types"=list(c("obs","pred"))))
   }
 }
 
@@ -129,38 +132,6 @@ get_thirdparty_wl <- function(location, type, min_date, max_date) {
       return(wl)
     }
 }
-
-# beaufort_wl_predictions <- function() {
-#   request <-
-#     httr::GET(
-#       url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
-#       query = list(
-#         "station" = "8656483",
-#         "end_date" = format(Sys.Date() + 3,"%Y%m%d"),
-#         "range" = "408",
-#         "product" = "predictions",
-#         "units" = "english",
-#         "datum" = "NAVD",
-#         "time_zone" = "gmt",
-#         "format" = "json",
-#         "application" = "UNC_Institute_for_the_Environment, https://github.com/acgold"
-#       )
-#     )
-#   
-#   latest_noaa_wl_predictions <-
-#     tibble::as_tibble(jsonlite::fromJSON(rawToChar(request$content))$predictions)
-#   colnames(latest_noaa_wl_predictions)[1:2] <- c("date", "predictions_ft_navd88")
-#   
-#   latest_noaa_wl_predictions <- latest_noaa_wl_predictions %>%
-#     transmute(
-#       location = "Beaufort, North Carolina",
-#       date = ymd_hm(date),
-#       level = as.numeric(predictions_ft_navd88),
-#       entity = "NOAA Predicted",
-#       notes = "prediction"
-#     )
-#   return(latest_noaa_wl_predictions)
-# }
 
 #------------------------ Define UI ---------------------------------------
 ui <- dashboardPage(
@@ -359,9 +330,13 @@ ui <- dashboardPage(
                                                          "center")
                          ),
                          column(4, 
-                                selectInput(inputId = "elev_datum", label ="Elevation Datum", selectize = F,choices = c("Road","NAVD88"), selected = "Road")),
-                         column(4))) 
-                            ),
+                                selectInput(inputId = "elev_datum", label =h4("Elevation Datum"), selectize = F,choices = c("Road","NAVD88"), selected = "Road")),
+                         column(4,
+                                h4("Local water levels",tippy(icon("info-circle",style="font-size:14px"), h5("Click the button below to add nearby downstream water levels to the plot.",br(),br(),"Adding these data can help visualize when flooding may occur.",br(),br(),"Turning this option on may slow down the drawing of the plot.",style = "text-align:left"))),
+                                switchInput(inputId = "view_3rdparty_data", value = F, size = "mini"),
+                                # checkboxInput(inputId = "view_3rdparty_data", label = "Check this box to add local water level data to the plot", value = FALSE),
+                                uiOutput(outputId="thirdparty_info")
+                            )))),
                      tabPanel(
                        "Site Description",
                        h3("Site description coming soon"),
@@ -443,7 +418,7 @@ server <- function(input, output, session) {
     output$date_filter <- renderUI(
       dateRangeInput(
         'dateRange',
-        label = 'Date range input: yyyy-mm-dd',
+        label = h4('Date range'),
         start = Sys.Date() - 2,
         end = Sys.Date() + 1,
         max = Sys.Date() + 3
@@ -611,7 +586,7 @@ server <- function(input, output, session) {
         }
         if(time_since_last_measurement() >= 120){
           div(width = "100%", style="background-color:#838386;height:25px;padding:2.5px 2.5px;margin-bottom:5px", 
-              p("Status: ",strong("UNKNOWN",style="color:white;"),tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely on or near the road surface"), ", but the sensor has not reported water level for", strong(time_since_last_measurement()), " minutes.", align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+              p("Status: ",strong("UNKNOWN",style="color:white;"),tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely on or near the road surface"), ", but the sensor has not reported water level for about ", strong(round(time_since_last_measurement()/60, digits = 0)), " hours", align = "left"),animation = "scale"),", last observation was about ",strong(round(time_since_last_measurement()/60,digits = 0))," hours ago", style = "color:white"))
         }
       }
       
@@ -622,7 +597,7 @@ server <- function(input, output, session) {
         }
         if(time_since_last_measurement() > 32){
           div(width = "100%", style="background-color:#838386;height:25px;padding:2.5px 2.5px;margin-bottom:5px",
-              p("Status: ",strong("UNKNOWN",style="color:white;"),tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely not near the road surface"), ", but the sensor has not reported water level for", strong(time_since_last_measurement()), " minutes.", align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+              p("Status: ",strong("UNKNOWN",style="color:white;"),tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely not near the road surface"), ", but the sensor has not reported water level for about ", strong(round(time_since_last_measurement()/60, digits = 0)), " hours", align = "left"),animation = "scale"),", last observation was about ",strong(round(time_since_last_measurement()/60, digits = 0))," hour(s) ago", style = "color:white"))
         }
       }
     })
@@ -774,12 +749,6 @@ server <- function(input, output, session) {
       }
     })
     
-    # # Sensor selected from map tab. Uses map click to update reactive value that controls dropdown menus on Data tab
-    # map1_clicked_sensor <- reactive({
-    #     req(input$m_marker_click)
-    #     input$m_marker_click
-    #     }) #Unused
-    
     # Updates the choices for the sensor ID on the data tab
     observe({
         reactive_selection$overall_data_sensor_choices <- sensor_locations$sensor_ID[sensor_locations$place == input$data_location]
@@ -821,6 +790,20 @@ server <- function(input, output, session) {
           }
         })
         
+        thirdparty_metadata <- reactive({
+          req(input$data_location)
+          get_thirdparty_metadata(location = input$data_location)
+        })
+        
+        observe({
+          print(thirdparty_metadata())
+        })
+        
+        output$thirdparty_info <- renderUI({
+          helpText("Local water level data at this station are from",a(href=thirdparty_metadata()$url,thirdparty_metadata()$entity, target = "_blank"))
+        })
+        
+        
         plot_missing_data_shading <- reactive({
           req(input$data_sensor, time_since_last_measurement())
           if(time_since_last_measurement() >= 32){
@@ -829,120 +812,126 @@ server <- function(input, output, session) {
           else(return(NULL))
         })
         
+        observeEvent(c(input$get_plot_data, input$view_3rdparty_data),{
+          req(input$view_3rdparty_data == T,
+              "obs" %in% unlist(thirdparty_metadata()$types),
+              abs(input$dateRange[2] - input$dateRange[1]) <=30,
+              nrow(sensor_data()!=0))
+
+            min_date = min(input$dateRange)
+            max_date = max(input$dateRange)
+
+            plot_sensor_stats <- sensor_locations %>%
+              filter(sensor_ID %in% input$data_sensor)
+
+            plot_3rd_party_data_obs <<- get_thirdparty_wl(location = input$data_location,
+                              type = "obs",
+                              min_date = min_date %>% str_remove_all("-"),
+                              max_date = max_date %>% str_remove_all("-")) %>%
+              mutate(date = datetime_to_timestamp(date),
+                     road_water_level= level-plot_sensor_stats$road_elevation,
+                     sensor_water_level=level)
+
+        })
+        
+        observeEvent(c(input$get_plot_data, input$view_3rdparty_data),{
+          req(input$view_3rdparty_data == T,
+              "pred" %in% unlist(thirdparty_metadata()$types),
+              abs(input$dateRange[2] - input$dateRange[1]) <=30,
+              nrow(sensor_data()!=0))
+          
+            min_date = min(input$dateRange)
+            max_date = max(input$dateRange)
+            
+          plot_sensor_stats <- sensor_locations %>% 
+            filter(sensor_ID %in% input$data_sensor)
+          
+          plot_3rd_party_data_predict <<- get_thirdparty_wl(location = input$data_location,
+                            type = "pred",
+                            min_date = min_date %>% str_remove_all("-"),
+                            max_date = max_date %>% str_remove_all("-")) %>% 
+            mutate(date = datetime_to_timestamp(date),
+                   road_water_level= level-plot_sensor_stats$road_elevation,
+                   sensor_water_level=level)
+          
+        })
+            
+
         # Render plot with selected data
         observe({
           if(nrow(sensor_data()) == 0){
             # Popup on load to display info
-            shinyalert::shinyalert(type="error", 
+            shinyalert::shinyalert(type="error",
                                    title="No data during the selected time range!",
                                    text="Please select a different time span.",
                                    animation = T)
-            
           }
           
-          if(nrow(sensor_data()) != 0){
           # Set min and max date using reactive values from date_filter
           min_date_plot <- reactive_min_date() 
           max_date_plot <- reactive_max_date() 
 
-          plot_3rd_party_data_stats <- get_thirdparty_metadata(location = input$data_location)
-          
           # use spinner for load
           w$show()
-          
+
           # Render the plot
           output$site_level_ts <-  renderHighchart({
-          
             req(nrow(sensor_data()>0))
-            # Assign reactive data to a normal object for dygraphs
-            plot_sensor_data <- sensor_data()
+            
+            # Get all plot data
+            plot_sensor_data <- sensor_data() 
             
             plot_sensor_stats <- sensor_locations %>% 
-              filter(sensor_ID %in% plot_sensor_data$sensor_ID)
+              filter(sensor_ID %in% input$data_sensor)
+            
+            x <- plot_sensor_data %>% 
+              arrange(date) %>% 
+              mutate(date = datetime_to_timestamp(date))
             
             # Plot Road datum
             if(input$elev_datum == "Road") {
-              # Measured water level
-              x <- xts::xts(plot_sensor_data$road_water_level,
-                            order.by = plot_sensor_data$date,
-                            tzone = "UTC")
               
-              tzone(x) <- "America/New_York"
               road_elevation_limit <- 0
               sensor_elevation_limit <- plot_sensor_stats$sensor_elevation - plot_sensor_stats$road_elevation
-              y_axis_range <- c(sensor_elevation_limit-0.5, ifelse(max(x, na.rm=T) > road_elevation_limit, max(x, na.rm=T) , road_elevation_limit+0.25))
-              
-              # # 3rd party measured water level
-              # x3rd_party <- xts::xts((plot_3rd_party_data_obs$level-plot_sensor_stats$road_elevation),
-              #                        order.by = plot_3rd_party_data_obs$date,
-              #                        tzone = "UTC")
-              # 
-              # tzone(x3rd_party) <- "America/New_York"
-              
-              # 3rd party predicted water level
-              # x3rd_party_predict <- xts::xts((plot_3rd_party_data_predict$level-plot_sensor_stats$road_elevation),
-              #                        order.by = plot_3rd_party_data_predict$date,
-              #                        tzone = "UTC")
-              # 
-              # tzone(x3rd_party_predict) <- "America/New_York"
+              y_axis_max <- ifelse(nrow(x) != 0,
+                                     c(ifelse(max(x$road_water_level, na.rm=T) > road_elevation_limit, max(x$road_water_level, na.rm=T) , road_elevation_limit+0.25)),
+                                     c(NA))
             }
             
             # Plot NAVD88 Datum
             if(input$elev_datum == "NAVD88") {
-              # measured water level
-              x <- xts::xts(plot_sensor_data$sensor_water_level,
-                            order.by = plot_sensor_data$date,
-                            tzone = "UTC")
-              
-              tzone(x) <- "America/New_York"
+
               road_elevation_limit <- plot_sensor_stats$road_elevation
               sensor_elevation_limit <- plot_sensor_stats$sensor_elevation
-              y_axis_range <- c(sensor_elevation_limit-0.5, ifelse(max(x, na.rm=T) > road_elevation_limit, max(x, na.rm=T) , road_elevation_limit +0.25 ))
+              y_axis_max <- ifelse(nrow(x)!=0,
+                                     c(ifelse(max(x$sensor_water_level, na.rm=T) > road_elevation_limit, max(x$sensor_water_level, na.rm=T) , road_elevation_limit +0.25 )),
+              c(NA))
               
-              # # third party measured water level
-              # x3rd_party <- xts::xts(plot_3rd_party_data_obs$level,
-              #                        order.by = plot_3rd_party_data_obs$date,
-              #                        tzone = "UTC")
-              # 
-              # tzone(x3rd_party) <- "America/New_York"
-              
-              # 3rd party predicted water level
-              # x3rd_party_predict <- xts::xts(plot_3rd_party_data_predict$level,
-              #                                order.by = plot_3rd_party_data_predict$date,
-              #                                tzone = "UTC")
-              # 
-              # tzone(x3rd_party_predict) <- "America/New_York"
             }
             
-            highchart() %>% 
-              hc_add_series(x,
+            hc <- highchart() %>%
+              hc_add_series(data = x %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level","sensor_water_level")),
+                            hcaes(x=date,
+                                  y = wl),
                             type="line",
                             name="Water Level",
-                            color="#1d1d75") %>% 
-              # hc_add_series(x3rd_party,
-              #               name = unique(plot_3rd_party_data_obs$entity),
-              #               type="line",
-              #               color="green",
-              #               visible = F) %>% 
-              # hc_add_series(x3rd_party_predict,
-              #               name = unique(plot_3rd_party_data_predict$entity),
-              #               type="line",
-              #               color="purple",
-              #               visible = F) %>% 
+                            color="#1d1d75") %>%
               hc_chart(zoomType= "x",
                        backgroundColor = "#FFFFFF"
-                       )%>% 
+                       )%>%
               hc_plotOptions(series = list(lineWidth = 2,
                                            allowPointSelect = TRUE,
-                                           states = list(hover = list(lineWidth = 2.5)))) %>% 
+                                           states = list(hover = list(lineWidth = 2.5)),
+                                           gapSize = 2160000,
+                                           gapUnit = "value")) %>%
               hc_tooltip(crosshairs = TRUE,
                          valueDecimals = 2,
-                         xDateFormat = "%I:%M %p, %b %e, %Y"
-                         
+                         xDateFormat = "%I:%M %p, %b %e, %Y",
+                         shared= TRUE
                          # borderWidth = 2
                          # sort = TRUE,
                          # table = TRUE
-                         ) %>%  
+                         ) %>%
               hc_xAxis(type = "datetime",
                        max = max_date_plot %>% datetime_to_timestamp(),
                        min = min_date_plot %>% datetime_to_timestamp(),
@@ -956,12 +945,12 @@ server <- function(input, output, session) {
                            from = plot_missing_data_shading(),
                            to = datetime_to_timestamp(Sys.time() %>% with_tz("UTC")),
                            color = hex_to_rgba("black", 0.1),
-                           label = list(text = "Missing data", 
+                           label = list(text = "Missing data",
                                         style = list(color = 'grey', fontWeight = 'bold', fontSize = 14),
                                         y = -5),
-                           # the zIndex is used to put the label text over the grid lines 
+                           # the zIndex is used to put the label text over the grid lines
                            zIndex = 1
-                          
+
                          )
                        ),
                        plotLines = list(list(value = datetime_to_timestamp(Sys.time() %>% with_tz("UTC")),
@@ -970,8 +959,8 @@ server <- function(input, output, session) {
                             width = 1,
                             zIndex = 4,
                             label = list(text = "Current time",
-                                         style = list( color = 'black', fontWeight = 'bold'))))) %>% 
-              hc_yAxis(max = y_axis_range[2],
+                                         style = list( color = 'black', fontWeight = 'bold'))))) %>%
+              hc_yAxis(max = y_axis_max,
                        title = list(text = "Water Level (ft)"),
                        # min = y_axis_range[1],
                        plotLines = list(
@@ -988,52 +977,47 @@ server <- function(input, output, session) {
                      width = 1,
                      zIndex = 4,
                      label = list(text = "Sensor Elevation",
-                                  style = list( color = 'black', fontWeight = 'bold'))))) %>% 
+                                  style = list( color = 'black', fontWeight = 'bold'))))) %>%
               hc_exporting(enabled = TRUE,
                            filename = paste0(plot_sensor_stats$sensor_ID,"_",min_date_plot %>% with_tz("America/New_York"),"_to_",max_date_plot %>% with_tz("America/New_York")),
                            showTable = F,
                            buttons = list(contextButton = list(symbolSize = 20,
                                                                x= -20,
-                                                               menuItems = list("viewFullscreen", "printChart", "separator", "downloadPNG")))) %>% 
+                                                               menuItems = list("viewFullscreen", "printChart", "separator", "downloadPNG")))) %>%
               hc_title(text =plot_sensor_stats$sensor_ID,
                        floating = F)
-            # 
-            # dygraph(x, main = plot_sensor_stats$sensor_ID) %>%
-            #   dyAxis("y", label = "Water level (ft)", valueRange = y_axis_range) %>%
-            #   dyAxis("x", label = "Date (EST/EDT)", valueRange = c(min_date_plot, max_date_plot), rangePad=5) %>%
-            #   dyOptions(colors = "#3266a8",
-            #             gridLineColor = "#e0e0e0",
-            #             strokeWidth = 2) %>%
-            #   dyLimit(road_elevation_limit, color = "red", label = "Road Elevation") %>%
-            #   dyLimit(sensor_elevation_limit, color = "black", label = "Sensor Elevation") %>%
-            #   dyUnzoom() %>%
-            #   dyCrosshair(direction = "vertical") %>%
-            #   dySeries("V1", label = "Level") 
             
+            if(input$view_3rdparty_data == T){
+                
+                plot_3rd_party_data_stats <- thirdparty_metadata()
+
+              if("obs" %in% unlist(plot_3rd_party_data_stats$types)){
+                hc <- hc %>% hc_add_series(plot_3rd_party_data_obs %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level","sensor_water_level")),
+                                           hcaes(x=date,
+                                                 y=wl),
+                                           name = unique(plot_3rd_party_data_obs$entity),
+                                           type="line",
+                                           color="#DC018A",
+                                           visible = T)
+              }
+  
+              if("pred" %in% unlist(plot_3rd_party_data_stats$types)){
+                hc <- hc %>% hc_add_series(plot_3rd_party_data_predict %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level","sensor_water_level")),
+                                           hcaes(x=date,
+                                                 y=wl),
+                                           name = unique(plot_3rd_party_data_predict$entity),
+                                           type="line",
+                                           color="#01CB4D",
+                                           visible = T)
+              }
+            }
+            
+            hc
+
           })
           
-          # Hide spinner after load
-            w$hide()
-          }
         })
         
-        
-        observe({
-          req(plot_3rd_party_data_stats)
-          
-          if(all(c("obs","pred") %in% plot_3rd_party_data_stats)){
-            plot_3rd_party_data_obs <- get_thirdparty_wl(location = input$data_location,
-                                                         type = "obs",
-                                                         min_date = input$dateRange[1] %>% str_remove_all("-"),
-                                                         max_date = input$dateRange[2] %>% str_remove_all("-"))  
-            
-            plot_3rd_party_data_predict <- get_thirdparty_wl(location = input$data_location,
-                                                             type = "pred",
-                                                             min_date = input$dateRange[1] %>% str_remove_all("-"),
-                                                             max_date = input$dateRange[2] %>% str_remove_all("-"))
-            
-          }
-        })
         observe({
           req(input$camera_ID)
           
