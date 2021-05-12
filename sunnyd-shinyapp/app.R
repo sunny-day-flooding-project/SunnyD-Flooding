@@ -791,7 +791,6 @@ server <- function(input, output, session) {
           helpText("Local water level data at this station are from",a(href=thirdparty_metadata()$url,thirdparty_metadata()$entity, target = "_blank"))
         })
         
-        
         plot_missing_data_shading <- reactive({
           req(input$data_sensor, time_since_last_measurement())
           if(time_since_last_measurement() >= 32){
