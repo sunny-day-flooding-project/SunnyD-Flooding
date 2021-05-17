@@ -357,12 +357,12 @@ ui <- dashboardPage(
                 tabPanel(
                   "Pictures",
                   fluidRow(column(6,
-                     imageOutput(outputId = "camera")),
-                  column(6,
-                         h1("Water detected?",tippy(icon("info-circle",style="font-size:16px"), tooltip = div(h5("We are using machine learning to detect water on the road surface using our flood cams.",br(),br(),"The model used here is trained to distinguish pictures that have water in them from those that do not. Cars, salt water stains, sun glare, and other features in the photos can decrease the accuracy of the model.",br(),br(),"This model is still in development and is for informational purposes only."), style = "text-align:left"))),
-                         div(p("In Development",style="color:white;text-align: center"),style="background-color:#fbb040;width:125px;border-radius: 20px"),
-                         p("The chart below shows the probability that water has been detected in this picture with our machine learning model"),
-                  highchartOutput(outputId ="tf_predict")))
+                     imageOutput(outputId = "camera")))
+#                   column(6,
+#                          h1("Water detected?",tippy(icon("info-circle",style="font-size:16px"), tooltip = div(h5("We are using machine learning to detect water on the road surface using our flood cams.",br(),br(),"The model used here is trained to distinguish pictures that have water in them from those that do not. Cars, salt water stains, sun glare, and other features in the photos can decrease the accuracy of the model.",br(),br(),"This model is still in development and is for informational purposes only."), style = "text-align:left"))),
+#                          div(p("In Development",style="color:white;text-align: center"),style="background-color:#fbb040;width:125px;border-radius: 20px"),
+#                          p("The chart below shows the probability that water has been detected in this picture with our machine learning model"),
+#                   highchartOutput(outputId ="tf_predict")))
                   ),
               tabPanel(
                 "Site Description",
@@ -1021,7 +1021,7 @@ server <- function(input, output, session) {
                 pull(DateTimeOriginalUTC) %>% 
                 lubridate::with_tz(tzone="America/New_York")
               
-              realtime_img <- magick::image_read(paste0("https://photos-sunnydayflood.cloudapps.unc.edu/public/",input$camera_ID,".jpg")) 
+              realtime_img <- magick::image_read(paste0("https://photos-sunnydayflood.apps.cloudapps.unc.edu/public/",input$camera_ID,".jpg")) 
               
               realtime_img %>% 
                 image_annotate(paste0(format(time, "%I:%M %p", usetz = T)," - ",format(time, "%b %d, %Y")), size = 40, color = "white", boxcolor = "black",
@@ -1035,55 +1035,55 @@ server <- function(input, output, session) {
               
             }, deleteFile = T)
             
-            output$tf_predict <- renderHighchart({
+#             output$tf_predict <- renderHighchart({
 
-              req <- httr::POST("https://ml-sunnydayflood.apps.cloudapps.unc.edu/detect_flooding_latest",
-                                body = list(camera_ID=input$camera_ID),
-                                encode = "json")
+#               req <- httr::POST("https://ml-sunnydayflood.apps.cloudapps.unc.edu/detect_flooding_latest",
+#                                 body = list(camera_ID=input$camera_ID),
+#                                 encode = "json")
 
-              prediction <- round(unlist(httr::content(req)),digits = 2)
+#               prediction <- round(unlist(httr::content(req)),digits = 2)
 
 
-              col_stops <- data.frame(
-                q = c(0.4, 0.6, .8),
-                c = c('#48bf84','#f5bf0f','#e1142c'),
-                stringsAsFactors = FALSE
-              )
+#               col_stops <- data.frame(
+#                 q = c(0.4, 0.6, .8),
+#                 c = c('#48bf84','#f5bf0f','#e1142c'),
+#                 stringsAsFactors = FALSE
+#               )
 
-              highchart() %>%
-                hc_chart(type = "solidgauge") %>%
-                hc_pane(
-                  startAngle = -90,
-                  endAngle = 90,
-                  background = list(
-                    outerRadius = '100%',
-                    innerRadius = '60%',
-                    shape = "arc"
-                  )
-                ) %>%
-                hc_tooltip(enabled = FALSE) %>%
-                hc_yAxis(
-                  stops = list_parse2(col_stops),
-                  lineWidth = 0,
-                  minorTickWidth = 0,
-                  tickAmount = 2,
-                  min = 0,
-                  max = 100,
-                  labels = list(y = 26, style = list(fontSize = "22px"))
-                ) %>%
-                hc_add_series(
-                  data = prediction*100,
-                  dataLabels = list(
-                    y = -50,
-                    borderWidth = 0,
-                    format= "{y} %",
-                    useHTML = TRUE,
-                    style = list(fontSize = "40px")
-                  )
-                ) %>%
-                hc_size(height = 300)
+#               highchart() %>%
+#                 hc_chart(type = "solidgauge") %>%
+#                 hc_pane(
+#                   startAngle = -90,
+#                   endAngle = 90,
+#                   background = list(
+#                     outerRadius = '100%',
+#                     innerRadius = '60%',
+#                     shape = "arc"
+#                   )
+#                 ) %>%
+#                 hc_tooltip(enabled = FALSE) %>%
+#                 hc_yAxis(
+#                   stops = list_parse2(col_stops),
+#                   lineWidth = 0,
+#                   minorTickWidth = 0,
+#                   tickAmount = 2,
+#                   min = 0,
+#                   max = 100,
+#                   labels = list(y = 26, style = list(fontSize = "22px"))
+#                 ) %>%
+#                 hc_add_series(
+#                   data = prediction*100,
+#                   dataLabels = list(
+#                     y = -50,
+#                     borderWidth = 0,
+#                     format= "{y} %",
+#                     useHTML = TRUE,
+#                     style = list(fontSize = "40px")
+#                   )
+#                 ) %>%
+#                 hc_size(height = 300)
 
-            })
+#             })
             w2$hide()
         })
         waiter::waiter_hide()
