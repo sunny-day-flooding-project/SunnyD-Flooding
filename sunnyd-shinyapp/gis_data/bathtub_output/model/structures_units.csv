@@ -1,8 +1,0 @@
-name,type
-s_elev,[ft]
-s_inv_elev,[ft]
-Code,chr
-Prcnt_Obst,chr
-Type_Obst,chr
-geometry,POINT [US_survey_foot]
-structureID,int

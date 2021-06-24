@@ -37,7 +37,7 @@ EXPOSE 5432
 RUN groupadd -r shinyapp && useradd --no-log-init -r -g shinyapp shinyapp
 
 # copy necessary files
-ADD sunnyd-shinyapp /home/shinyapp/app
+ADD shinyapp /home/shinyapp/app
 
 # change working directory
 WORKDIR /home/shinyapp
