@@ -576,7 +576,7 @@ server <- function(input, output, session) {
       }
       
       else if(flood_status_reactive() == T){
-        if(time_since_last_measurement() <= 45){
+        if(time_since_last_measurement() <= 120){
           div(width = "100%", style="background-color:#e1142c;height:25px;padding:2.5px 2.5px;margin-bottom:5px;", 
               p("Status: ",strong("FLOODING",style="color:white;"),tippy::tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely on or near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
           
