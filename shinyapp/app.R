@@ -23,6 +23,7 @@ library(shinydisconnect)
 library(tippy)
 library(httr)
 library(shinyWidgets)
+library(shinyjs)
 
 
 # Source env variables if working on desktop
@@ -117,11 +118,17 @@ get_thirdparty_wl <- function(location, type, min_date, max_date) {
     }
 }
 
+jsCode <- "shinyjs.init = function() {
+  $(document).on('shiny:sessioninitialized', function (e) {
+  var mobile = window.matchMedia('only screen and (max-width: 768px)').matches;
+  Shiny.onInputChange('is_mobile_device', mobile);
+});
+}"
+
 #------------------------ Define UI ---------------------------------------
 ui <- dashboardPage(
     title = "Data Viewer - Sunny Day Flooding Project", 
     skin = "black",
-    
     header = dashboardHeader(
         title =  HTML('
                 <div width="300px">
@@ -200,6 +207,8 @@ ui <- dashboardPage(
             css = ""
           ),
             useShinyalert(),
+            useShinyjs(),
+            extendShinyjs(text = jsCode, functions = c()),
             use_waiter(),
             waiter::waiter_show_on_load(html = spin_3k(),
                                         color = transparent(0)),
@@ -226,6 +235,7 @@ ui <- dashboardPage(
           color: #fff;
           background: #000;
         }
+        
         
         .main-header .sidebar-toggle {
           font-weight: 200; 
@@ -294,7 +304,7 @@ ui <- dashboardPage(
     tabItem(tabName = "Map",
         # waiter::waiter_show_on_load(),
             fluidRow(
-              leafletOutput(outputId = "m", width="100%",height="calc(100vh - 80px)"),
+              uiOutput(outputId = "leaf")
             )
             ), 
     
@@ -307,7 +317,8 @@ ui <- dashboardPage(
                      id = "data_tabs",
                      tabPanel(
                          "Plot",
-                         highchartOutput("site_level_ts", height = "50vh", width = "100%"),
+                         highchartOutput("site_level_ts", width = "100%"),
+                         uiOutput("site_notes"),
                          wellPanel(fluidRow(column(4,
                                                    
                                                    uiOutput("date_filter", align = "center"),
@@ -324,8 +335,8 @@ ui <- dashboardPage(
                             )))),
                      tabPanel(
                        "Site Description",
-                       h3("Site description coming soon"),
-                       actionButton("view_on_map_wl", label = "View site on map", icon = icon("map"))
+                       actionButton("view_on_map_wl", label = "View site on map", icon = icon("map")),
+                       uiOutput(outputId = "site_description")
                      ),
                      tabPanel(
                         "Download",
@@ -361,16 +372,6 @@ ui <- dashboardPage(
             ),
     tabItem(tabName = "About",
           includeMarkdown("about.md")
-            # fluidRow(
-            #   h1("The Sunny Day Flooding Project"),
-            #   p("We are a group of researchers from",strong("UNC Chapel Hill"), "and", strong("NC State"), "that work with NC communities to measure, model, and better understand the causes and impacts of chronic flooding."),
-            #   strong("Visit our", a("Project Website", href = "https://tarheels.live/sunnydayflood/"), "to learn more about the project"),
-              
-            #   h1("Data Viewer"),
-            #   p("This data viewer shows real-time water level data and pictures from our study sites."),
-            #   p("We are constantly optimizing the data viewer and would love to hear your feedback about the site."),
-            #   strong("Send us an ", a("email",href = "mailto:sunnydayflood@gmail.com"), "with any constructive comments!")
-            # )
             )
                 )
                 )
@@ -415,8 +416,8 @@ server <- function(input, output, session) {
     )
     
     # Popup on load to display info
-    shinyalert(title = "Welcome to the data viewer! (beta)",
-               text = "Here you can view real-time data from Sunny Day Flooding Project monitoring sites.\n\n Data and images are preliminary and for informational purposes only",
+    shinyalert(text = includeMarkdown("landing_text.md"),
+               html = T,
                closeOnClickOutside = FALSE,
                showConfirmButton = T,
                confirmButtonCol = "#fbb040",
@@ -424,6 +425,35 @@ server <- function(input, output, session) {
                type = "info",
                animation=F,
                size = "s")
+    
+
+    output$leaf = renderUI({
+      req(!is.null(input$is_mobile_device))
+      
+      
+      if (input$is_mobile_device == F) {
+        leafletOutput(outputId = "m",
+                      width = "100%",
+                      height = "calc(100vh - 80px)")
+      }
+      
+      else if (input$is_mobile_device == T) {
+        leafletOutput(outputId = "m",
+                      width = "100%",
+                      height = "calc(100vh - 130px)")
+      }
+      
+    })
+    
+    observeEvent(input$nav,
+                 {
+                   req(input$is_mobile_device == T)
+                   print(input$is_mobile_device)
+                   # for desktop browsers
+                   addClass(selector = "body", class = "sidebar-collapse")
+                   # for mobile browsers
+                   removeClass(selector = "body", class = "sidebar-open")
+                 })
     
     # Load Data
     # Update sensor locations with most recent data from database
@@ -567,7 +597,7 @@ server <- function(input, output, session) {
       if(flood_status_reactive() == F){
         if(time_since_last_measurement() <= 45){
           div(width = "100%", style="background-color:#48bf84;height:25px;padding:2.5px 2.5px;margin-bottom:5px;",
-              p("Status: ",strong("NOT FLOODING",style="color:white;"),tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely not near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+              p("Status: ",strong("NOT FLOODING",style="color:white;"),tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely not near the road surface."), align = "left"),animation = "scale"),", ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
         }
         else(
           div(width = "100%", style="background-color:#838386;height:25px;padding:2.5px 2.5px;margin-bottom:5px;",
@@ -578,12 +608,12 @@ server <- function(input, output, session) {
       else if(flood_status_reactive() == T){
         if(time_since_last_measurement() <= 120){
           div(width = "100%", style="background-color:#e1142c;height:25px;padding:2.5px 2.5px;margin-bottom:5px;", 
-              p("Status: ",strong("FLOODING",style="color:white;"),tippy::tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely on or near the road surface."), align = "left"),animation = "scale"),", last observation was ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
+              p("Status: ",strong("FLOODING",style="color:white;"),tippy::tippy(icon("info-circle"), h5("Water level measurements within this storm drain indicate that water is", strong("likely on or near the road surface."), align = "left"),animation = "scale"),", ",strong(time_since_last_measurement())," minutes ago", style = "color:white"))
           
         }
         else(
           div(width = "100%", style="background-color:#838386;height:25px;padding:2.5px 2.5px;margin-bottom:5px;", 
-              p("Status: ",strong("UNKNOWN",style="color:white;"),tippy::tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely on or near the road surface"), ", but the sensor has not reported water level for about ", strong(round(time_since_last_measurement()/60, digits = 0)), " hours", align = "left"),animation = "scale"),", last observation was about ",strong(round(time_since_last_measurement()/60,digits = 0))," hours ago", style = "color:white"))
+              p("Status: ",strong("UNKNOWN",style="color:white;"),tippy::tippy(icon("info-circle"), h5("The latest water level measurements within this storm drain indicate that water was", strong("likely on or near the road surface"), ", but the sensor has not reported water level for about ", strong(round(time_since_last_measurement()/60, digits = 0)), " hours", align = "left"),animation = "scale"),", about ",strong(round(time_since_last_measurement()/60,digits = 0))," hour(s) ago", style = "color:white"))
         )
       }
     })
@@ -611,7 +641,7 @@ server <- function(input, output, session) {
                                 # addAwesomeMarkers(data = camera_locations, icon=map_icon, label=~as.character(camera_ID)) %>% 
                                  addLayersControl(
                                      baseGroups = c("Positron (default)", "Dark Matter","Imagery", "OSM"),
-                                     options = layersControlOptions(collapsed = FALSE)) %>% 
+                                     options = layersControlOptions(collapsed = T)) %>% 
                                  addEasyButton(easyButton(
                                      icon="fa-globe", title="Zoom out",
                                      onClick=JS("function(btn, map){ map.setView({lng:-77.360784, lat:34.576053}, 8); }"),
@@ -794,6 +824,7 @@ server <- function(input, output, session) {
           else(return(NULL))
         })
         
+        
         observeEvent(c(input$get_plot_data, input$view_3rdparty_data),{
           req(input$view_3rdparty_data == T,
               "obs" %in% unlist(thirdparty_metadata()$types),
@@ -838,6 +869,27 @@ server <- function(input, output, session) {
           
         })
             
+        site_info <- reactive({
+          req(input$data_sensor)
+          return(sensor_locations %>% 
+                   filter(sensor_ID == input$data_sensor))
+        })
+        
+        output$site_notes <- renderUI({
+          fluidRow(
+            column(width = 6,
+                   strong("Notes: "),
+                   p(site_info()$notes.x)
+                   )
+          )
+        })
+        
+        output$site_description <- renderUI({
+          fluidRow(
+            includeMarkdown(paste0("site_descriptions/",site_info()$sensor_ID,"/",site_info()$sensor_ID,".md"))
+          )
+          
+        })
 
         # Render plot with selected data
         observe({
