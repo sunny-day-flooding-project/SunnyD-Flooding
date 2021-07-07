@@ -287,6 +287,22 @@ ui <- dashboardPage(
           border: 3px;
         }
         
+        #view_on_map_wl {
+          background-color: #fbb040;
+          color: white;
+          font-size: 12pt;
+          font-weight: bold;
+          border: 3px;
+        }
+        
+        #view_on_map_wl:hover {
+          background-color: #f1a93e;
+          color: white;
+          font-size: 12pt;
+          font-weight: bold;
+          border: 3px;
+        }
+        
         .content-wrapper, .right-side {
                                 background-color: #ffffff;
         }
@@ -335,7 +351,8 @@ ui <- dashboardPage(
                             )))),
                      tabPanel(
                        "Site Description",
-                       actionButton("view_on_map_wl", label = "View site on map", icon = icon("map")),
+                       # actionButton("view_on_map_wl", label = "View site on map", icon = icon("map"),
+                       #              style="float:right;"),
                        uiOutput(outputId = "site_description")
                      ),
                      tabPanel(
