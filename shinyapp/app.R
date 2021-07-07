@@ -465,7 +465,6 @@ server <- function(input, output, session) {
     observeEvent(input$nav,
                  {
                    req(input$is_mobile_device == T)
-                   print(input$is_mobile_device)
                    # for desktop browsers
                    addClass(selector = "body", class = "sidebar-collapse")
                    # for mobile browsers
