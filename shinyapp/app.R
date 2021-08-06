@@ -366,17 +366,20 @@ ui <- dashboardPage(
             ),
     tabItem(tabName = "Pictures",
             fluidRow(
-              tabsetPanel(
+              tabBox(
                 tabPanel(
                   "Pictures",
-                  fluidRow(column(6,
-                     imageOutput(outputId = "camera")))
-#                   column(6,
-#                          h1("Water detected?",tippy(icon("info-circle",style="font-size:16px"), tooltip = div(h5("We are using machine learning to detect water on the road surface using our flood cams.",br(),br(),"The model used here is trained to distinguish pictures that have water in them from those that do not. Cars, salt water stains, sun glare, and other features in the photos can decrease the accuracy of the model.",br(),br(),"This model is still in development and is for informational purposes only."), style = "text-align:left"))),
-#                          div(p("In Development",style="color:white;text-align: center"),style="background-color:#fbb040;width:125px;border-radius: 20px"),
-#                          p("The chart below shows the probability that water has been detected in this picture with our machine learning model"),
-#                   highchartOutput(outputId ="tf_predict")))
-                  ),
+                  fluidRow(column(12,
+                                  div(style="padding:10px;",
+                     imageOutput(outputId = "camera"))
+                     ))),
+                  # column(6,
+                  #        h1("Water detected?",tippy(icon("info-circle",style="font-size:16px"), tooltip = div(h5("We are using machine learning to detect water on the road surface using our flood cams.",br(),br(),"The model used here is trained to distinguish pictures that have water in them from those that do not. Cars, salt water stains, sun glare, and other features in the photos can decrease the accuracy of the model.",br(),br(),"This model is still in development and is for informational purposes only."), style = "text-align:left"))),
+                  #        div(p("In Development",style="color:white;text-align: center"),style="background-color:#fbb040;width:125px;border-radius: 20px"),
+                  #        # p("The chart below shows the probability that water has been detected in this picture with our machine learning model"),
+                  #         uiOutput(outputId = "camml")))
+                  #        # highchartOutput(outputId ="tf_predict")))
+                  # ),
               tabPanel(
                 "Site Description",
                 h3("Site description coming soon"),
@@ -558,14 +561,56 @@ server <- function(input, output, session) {
         }
     })
        
+    wl_offset <- reactive({
+      req(input$data_sensor)
+      
+      start_date <- sensor_locations %>% 
+        filter(sensor_ID == !!input$data_sensor) %>% 
+        pull(date_surveyed) 
+      
+      start_date_max <- start_date + days(2)
+      
+      start_wl <- database %>%
+        filter(sensor_ID %in% !!input$data_sensor) %>% 
+        filter(date >= !!start_date & date <= !!start_date_max) %>% 
+        collect() %>% 
+        summarise(date = !!start_date,
+                  min_wl = min(sensor_water_level, na.rm=T))
+      
+      end_date <- reactive_max_date()
+      
+      end_date_min <- end_date - days(2)
+      
+      end_wl <- database %>%
+        filter(sensor_ID %in% !!input$data_sensor) %>% 
+        filter(date >= !!end_date_min & date <= !!end_date) %>% 
+        collect() %>% 
+        summarise(date = !!end_date,
+                  min_wl = min(sensor_water_level, na.rm=T))
+      
+      tibble::tibble(start_date = start_date,
+                     end_date = end_date, 
+                     duration = time_length(end_date - start_date),
+                     diff = end_wl$min_wl - start_wl$min_wl,
+                     slope = diff/duration)
+      
+    })
+    
     # Reactive value that stores the data from the selected sensor site, filtered by date range
     sensor_data <- reactive({
+      
+      wl_offset_df <- wl_offset()
+      
       req(input$data_sensor)
       database %>%
         filter(sensor_ID %in% !!input$data_sensor) %>%
         filter(date >= !!reactive_min_date() & date < !!reactive_max_date(),
                qa_qc_flag == F) %>% 
-        collect()
+        collect() %>% 
+        mutate(time_since_survey = time_length(date - wl_offset_df$start_date),
+               sensor_water_level = sensor_water_level - (time_since_survey*wl_offset_df$slope),
+               road_water_level = road_water_level - (time_since_survey*wl_offset_df$slope))
+        
     })
 
     output$downloadData <- downloadHandler(
@@ -1099,11 +1144,17 @@ server <- function(input, output, session) {
               
             }, deleteFile = T)
             
+            # output$camml <- renderUI({
+            #   req <- httr::POST("https://ml-acgold.apps.cloudapps.unc.edu/detect_flooding_latest",
+            #                     body = list(camera_ID=input$camera_ID),
+            #                     encode = "json")
+            # })
+            
 #             output$tf_predict <- renderHighchart({
 
-#               req <- httr::POST("https://ml-sunnydayflood.apps.cloudapps.unc.edu/detect_flooding_latest",
-#                                 body = list(camera_ID=input$camera_ID),
-#                                 encode = "json")
+              # req <- httr::POST("https://ml-sunnydayflood.apps.cloudapps.unc.edu/detect_flooding_latest",
+              #                   body = list(camera_ID=input$camera_ID),
+              #                   encode = "json")
 
 #               prediction <- round(unlist(httr::content(req)),digits = 2)
 

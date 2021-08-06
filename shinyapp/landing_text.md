@@ -10,4 +10,4 @@ monitoring sites.
 
 </br>
 
-*Data and images are preliminary and for informational purposes only*
+*Data & images are preliminary and for informational use only*
