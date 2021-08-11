@@ -127,14 +127,14 @@ jsCode <- "shinyjs.init = function() {
 
 
 #------------------------ Define UI ---------------------------------------
-ui <- dashboardPage(
+ui <- bs4Dash::dashboardPage(
   title = "Data Viewer", 
-  header = dashboardHeader(
+  header = bs4Dash::dashboardHeader(
     border = F,
     .list = list(span(HTML('<i class="fas fa-sun" style="color:#fbb040;display:inline;"></i>'),p("Sunny Day Flooding Project", style = "color:white;display:inline;"))
     )
   ),
-  sidebar = dashboardSidebar(
+  sidebar = bs4Dash::dashboardSidebar(
     width = 400,
     skin = "light",
     status = "primary",
@@ -148,7 +148,7 @@ ui <- dashboardPage(
       menuItem("About", tabName = "About", icon = icon("info-circle"))
     )
   ),
-  body = dashboardBody(
+  body = bs4Dash::dashboardBody(
     fluidPage(
       disconnectMessage(
         text = "Your session has timed out! Try refreshing the page.",
