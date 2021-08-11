@@ -3,7 +3,6 @@ library(dplyr)
 library(dbplyr)
 library(lubridate)
 library(shiny)
-library(bs4Dash)
 library(colourvalues)
 library(waiter)
 library(sf)
@@ -24,6 +23,7 @@ library(tippy)
 library(httr)
 library(shinyWidgets)
 library(shinyjs)
+library(bs4Dash)
 
 
 # Source env variables if working on desktop
@@ -39,6 +39,11 @@ waiting_screen <- tagList(
 pal <- colorNumeric(
   palette = rev(brewer.pal(10,"RdYlBu")),
   domain = c(-3.5,0.5))
+
+pal_rev <- colorNumeric(
+  palette = rev(brewer.pal(10,"RdYlBu")),
+  domain = c(-3.5,0.5),
+  reverse = T)
 
 # Connect to database
 con <- dbPool(
@@ -356,9 +361,6 @@ ui <- bs4Dash::dashboardPage(
                        tabPanel(
                          "Plot",
                          highchartOutput("site_level_ts", width = "100%"),
-                         fluidRow(
-                           uiOutput("site_notes")
-                         ),
                          hr(),
                          h4("Plot options"),
                          fluidRow(
@@ -390,6 +392,12 @@ ui <- bs4Dash::dashboardPage(
                            ),
                            column(width=1)
                            
+                         ),
+                         hr(),
+                         fluidRow(
+                           column(width=12,
+                            uiOutput("site_notes")
+                           )
                          )
                        ),
                        tabPanel(
@@ -811,10 +819,10 @@ server <- function(input, output, session) {
                                               clusterId = "place",
                                               layerId = sensor_locations$sensor_ID,
                                               color = "black", fillColor = ~pal(road_water_level), fillOpacity = 1) %>% 
-                             leaflet::addLegend('bottomright', pal = pal, values = c(-3.5,0.5),
+                             leaflet::addLegend('bottomright', pal = pal_rev, values = c(-3.5,0.5),
                                                 title = 'Water level<br>relative to<br>surface (ft)',
-                                                opacity = 1) %>% 
-                             # addAwesomeMarkers(data = camera_locations, icon=map_icon, label=~as.character(camera_ID)) %>% 
+                                                opacity = 1,
+                                                labFormat = labelFormat(transform = function(x) sort(x, decreasing = TRUE))) %>% 
                              addLayersControl(
                                baseGroups = c("Positron (default)", "Dark Matter","Imagery", "OSM"),
                                options = layersControlOptions(collapsed = T)) %>% 
@@ -1052,7 +1060,7 @@ server <- function(input, output, session) {
   })
   
   output$site_notes <- renderUI({
-    p(strong("Notes: "),site_info()$notes.x)
+    p(strong("Site notes: "),site_info()$notes.x)
   })
   
   output$site_description <- renderUI({
