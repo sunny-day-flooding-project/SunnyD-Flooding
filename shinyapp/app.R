@@ -125,45 +125,9 @@ jsCode <- "shinyjs.init = function() {
 });
 }"
 
-library(fresh)
-# create the theme with a cyberpunk color palette
-theme <- create_theme(
-  bs4dash_vars(
-    navbar_light_color = "#bec5cb",
-    navbar_light_active_color = "#fff",
-    navbar_light_hover_color = "#d4d4d4"
-  ),
-  bs4dash_yiq(
-    contrasted_threshold = 10,
-    text_dark = "#FFF",
-    text_light = "#000"
-  ),
-  bs4dash_layout(
-    main_bg = "#f7f7f7"
-  ),
-  bs4dash_sidebar_light(
-    bg = "#343a40",  #"#343a40",
-    color = "lightgrey",
-    hover_color = "#f7f7f7",
-    active_color = "#000",
-    submenu_bg = "#272c30",
-    submenu_color = "#fff",
-    submenu_hover_color = "#fff"
-    # header_color = "#13294b"
-  ),
-  bs4dash_status(
-    primary = "#616C78", 
-    danger = "#BF616A",
-    # light = "#272c30"
-  ),
-  bs4dash_font(
-    size_base = "0.9rem",
-    weight_bold = 900
-  )
-)
+
 #------------------------ Define UI ---------------------------------------
 ui <- dashboardPage(
-  freshTheme = theme,
   title = "Data Viewer", 
   header = dashboardHeader(
     border = F,
@@ -206,6 +170,7 @@ ui <- dashboardPage(
       waiter::waiter_show_on_load(html = spin_3k(),
                                   color = transparent(0)),
       tags$head(tags$link(rel = "shortcut icon", href = "https://tarheels.live/sunnydayflood/wp-content/uploads/sites/1319/2021/02/sunny_d_icon-01-2.png"),
+                includeCSS("sunnyd-theme.css"),
                 tags$style(HTML('
               
         .content-wrapper>.content {
