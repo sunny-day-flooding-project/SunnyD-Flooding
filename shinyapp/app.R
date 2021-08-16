@@ -123,6 +123,18 @@ get_thirdparty_wl <- function(location, type, min_date, max_date) {
   }
 }
 
+time_converter <- function(x){
+  if(x < 60){
+    return(paste0(strong(x)," minutes ago"))
+  }
+  else if(x >= 60 & x < 1440){
+    return(paste0("about ", strong(round(x/60))," hour(s) ago"))
+  }
+  else(
+    return(paste0("about ", strong(round(x/1440)), " day(s) ago"))
+  )
+}
+
 jsCode <- "shinyjs.init = function() {
   $(document).on('shiny:sessioninitialized', function (e) {
   var mobile = window.matchMedia('only screen and (max-width: 768px)').matches;
@@ -297,6 +309,11 @@ ui <- bs4Dash::dashboardPage(
         
         #camera img {max-width: 100%; width: 500px; height: auto}
         
+        .input-group-text {
+          background-color: #ffffff00!important;
+          border: none;
+        }
+        
       '))),
       tabItems(
         
@@ -377,13 +394,7 @@ ui <- bs4Dash::dashboardPage(
                            ),
                            column(width=1),
                            column(width = 3,
-                                  dateRangeInput(
-                                    inputId = 'dateRange',
-                                    label = 'Date range',
-                                    start = Sys.Date() - 2,
-                                    end = Sys.Date() + 1,
-                                    max = Sys.Date() + 3
-                                  ),
+                                  uiOutput("dateRange"),
                                   br(),
                                   div(
                                     actionButton("get_plot_data", "Plot new dates"),
@@ -474,6 +485,16 @@ server <- function(input, output, session) {
                    html = spin_3k(),
                    color = transparent(.75)) 
   
+  output$dateRange <- renderUI({
+    dateRangeInput(
+      inputId = 'dateRange',
+      label = 'Date range',
+      start = Sys.Date() - 2,
+      end = Sys.Date() + 1,
+      max = Sys.Date() + 14
+      )
+  })
+
   # Setup date filter for Data tab sidebar UI
   output$date_filter_photos <- renderUI(
     dateRangeInput(
@@ -626,7 +647,11 @@ server <- function(input, output, session) {
       summarise(date = !!start_date,
                 min_wl = min(sensor_water_level, na.rm=T))
     
-    end_date <- isolate(reactive_max_date())
+    end_date <- database %>%
+      filter(sensor_ID %in% !!input$data_sensor) %>% 
+      filter(date == max(date, na.rm=T)) %>% 
+      collect() %>% 
+      pull(date)
     
     end_date_min <- end_date - days(2)
     
@@ -647,17 +672,19 @@ server <- function(input, output, session) {
   
   # Reactive value that stores the data from the selected sensor site, filtered by date range
   sensor_data <- reactive({
+    req(input$data_sensor)
+    
     input$refresh_button
     
-    wl_offset_df <- wl_offset()
-    
-    req(input$data_sensor)
+    wl_offset_df <- isolate(wl_offset())
+
     database %>%
       filter(sensor_ID %in% !!input$data_sensor) %>%
       filter(date >= !!reactive_min_date() & date < !!reactive_max_date(),
              qa_qc_flag == F) %>% 
       collect() %>% 
       mutate(time_since_survey = time_length(date - wl_offset_df$start_date),
+             time_since_survey = ifelse(time_since_survey >= 0, time_since_survey, 0),
              sensor_water_level = sensor_water_level - (time_since_survey*wl_offset_df$slope),
              road_water_level = road_water_level - (time_since_survey*wl_offset_df$slope))
     
@@ -721,8 +748,13 @@ server <- function(input, output, session) {
   # showing the banner of flood alert status
   observe({
     # req(flood_status_reactive(), time_since_last_measurement())
+    
+    time_since_last_measurement_value <- time_since_last_measurement()
+    
+    time_since_last_measurement_text <- time_converter(time_since_last_measurement_value)
+    
     if(flood_status_reactive() == F){
-      if(time_since_last_measurement() <= 45){
+      if(time_since_last_measurement_value <= 45){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -731,8 +763,7 @@ server <- function(input, output, session) {
                       icon("info-circle"),
                       "  Flood Status: ",
                       strong("NOT FLOODING, ", style = "color:white;"),
-                      strong(time_since_last_measurement()),
-                      " minutes ago",
+                      HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
                     status = "success",
@@ -750,8 +781,7 @@ server <- function(input, output, session) {
                       icon("info-circle"),
                       "  Flood Status: ",
                       strong("UNKNOWN, ", style = "color:white;"),
-                      strong(time_since_last_measurement()),
-                      " minutes ago",
+                      HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
                     status = "gray",
@@ -762,7 +792,7 @@ server <- function(input, output, session) {
     }
     
     else if(flood_status_reactive() == T){
-      if(time_since_last_measurement() <= 120){
+      if(time_since_last_measurement_value <= 120){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -771,8 +801,7 @@ server <- function(input, output, session) {
                       icon("info-circle"),
                       "  Flood Status: ",
                       strong("FLOODING, ", style = "color:white;"),
-                      strong(time_since_last_measurement()),
-                      " minutes ago",
+                      HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
                     status = "danger",
@@ -790,8 +819,7 @@ server <- function(input, output, session) {
                       icon("info-circle"),
                       "  Flood Status: ",
                       strong("UNKNOWN, ", style = "color:white;"),
-                      strong(time_since_last_measurement()),
-                      " minutes ago",
+                      HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
                     status = "gray",
@@ -818,7 +846,9 @@ server <- function(input, output, session) {
                                               clusterOptions = markerClusterOptions(),
                                               clusterId = "place",
                                               layerId = sensor_locations$sensor_ID,
-                                              color = "black", fillColor = ~pal(road_water_level), fillOpacity = 1) %>% 
+                                              color = "black", 
+                                              fillColor = ~pal(road_water_level), 
+                                              fillOpacity = 1) %>% 
                              leaflet::addLegend('bottomright', pal = pal_rev, values = c(-3.5,0.5),
                                                 title = 'Water level<br>relative to<br>surface (ft)',
                                                 opacity = 1,
@@ -1074,11 +1104,12 @@ server <- function(input, output, session) {
   
   # Render plot with selected data
   observe({
-    if(nrow(sensor_data()) == 0){
+    if(nrow(sensor_data()) == 0 & input$view_3rdparty_data == F){
       # Popup on load to display info
       shinyalert::shinyalert(type="error",
-                             title="No data during the selected time range!",
-                             text="Please select a different time span.",
+                             title="Whoops, no data!",
+                             text="We don't have any data during the selected time range. 
+                             Please select a different time span or turn on 'Local Water Levels' to view data from other sources.",
                              animation = T)
     }
     
