@@ -135,6 +135,39 @@ time_converter <- function(x){
   )
 }
 
+get_wl_offset <- function(id, info_db, db){
+  start_date <- info_db %>% 
+    filter(sensor_ID == !!id) %>% 
+    pull(date_surveyed) 
+  
+  start_date_max <- start_date + days(2)
+  
+  start_wl <- db %>%
+    filter(sensor_ID == !!id) %>% 
+    filter(date >= !!start_date & date <= !!start_date_max) %>% 
+    collect() %>% 
+    summarise(date = !!start_date,
+              min_wl = min(sensor_water_level, na.rm=T))
+  
+  end_date <- db %>%
+    filter(sensor_ID == !!id) %>% 
+    filter(date == max(date, na.rm=T)) %>% 
+    collect() %>% 
+    pull(date)
+  
+  end_date_min <- end_date - days(2)
+  
+  end_wl <- db %>%
+    filter(sensor_ID == !!id) %>% 
+    filter(date >= !!end_date_min & date <= !!end_date) %>% 
+    collect() %>% 
+    summarise(date = !!end_date,
+              min_wl = min(sensor_water_level, na.rm=T))
+  
+  return(end_wl$min_wl - start_wl$min_wl)
+  
+}
+
 jsCode <- "shinyjs.init = function() {
   $(document).on('shiny:sessioninitialized', function (e) {
   var mobile = window.matchMedia('only screen and (max-width: 768px)').matches;
@@ -189,7 +222,7 @@ ui <- bs4Dash::dashboardPage(
       tags$head(tags$link(rel = "shortcut icon", href = "https://tarheels.live/sunnydayflood/wp-content/uploads/sites/1319/2021/02/sunny_d_icon-01-2.png"),
                 includeCSS("sunnyd-theme.css"),
                 tags$style(HTML('
-              
+        
         .content-wrapper>.content {
           padding-top:15px !important;
           padding-bottom:15px !important;
@@ -553,8 +586,15 @@ server <- function(input, output, session) {
                 group_by(sensor_ID) %>%
                 filter(qa_qc_flag == F) %>% 
                 filter(date == max(date, na.rm=T)) %>% 
-                collect(),
-              by=c("place","sensor_ID", "sensor_elevation","road_elevation")) %>%
+                collect() %>% 
+                mutate(wl_offset_nonreactive = get_wl_offset(id = sensor_ID, 
+                                                             info_db = con %>% 
+                                                               tbl("sensor_locations") %>%
+                                                               collect(), 
+                                                             db = database)) %>% 
+                mutate(sensor_water_level = sensor_water_level - wl_offset_nonreactive,
+                       road_water_level = road_water_level - wl_offset_nonreactive),
+              by=c("place", "sensor_ID", "sensor_elevation", "road_elevation")) %>%
     mutate(date_lst = lubridate::with_tz(date, tzone = "America/New_York")) %>% 
     sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
     mutate(
@@ -669,6 +709,8 @@ server <- function(input, output, session) {
                    slope = diff/duration)
     
   })
+  
+  
   
   # Reactive value that stores the data from the selected sensor site, filtered by date range
   sensor_data <- reactive({
@@ -1166,18 +1208,22 @@ server <- function(input, output, session) {
                  backgroundColor = "#FFF"
         )%>%
         hc_plotOptions(series = list(lineWidth = 2,
+                                     # Shows points on line when hovered
                                      allowPointSelect = TRUE,
+                                     # Makes line thicker on hover
                                      states = list(hover = list(lineWidth = 2.5)),
+                                     # Defines gap size to not connect points with line
                                      gapSize = 2160000,
-                                     gapUnit = "value"
+                                     gapUnit = "value",
+                                     # Controls when points are shown on plot (only on zoom)
+                                     marker = list(
+                                       enabledThreshold = 0.25
+                                     )
         )) %>%
         hc_tooltip(crosshairs = TRUE,
                    valueDecimals = 2,
                    xDateFormat = "%I:%M %p, %b %e, %Y",
                    shared= TRUE
-                   # borderWidth = 2
-                   # sort = TRUE,
-                   # table = TRUE
         ) %>%
         hc_xAxis(type = "datetime",
                  max = max_date_plot %>% datetime_to_timestamp(),
