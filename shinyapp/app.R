@@ -1203,7 +1203,11 @@ server <- function(input, output, session) {
                             y = wl),
                       type="line",
                       name="Water Level",
-                      color="#1d1d75") %>%
+                      color="#1d1d75",
+                      # Controls when points are shown on plot (only on zoom)
+                      marker = list(
+                        enabledThreshold = 0.25
+                      )) %>%
         hc_chart(zoomType= "x",
                  backgroundColor = "#FFF"
         )%>%
@@ -1214,11 +1218,8 @@ server <- function(input, output, session) {
                                      states = list(hover = list(lineWidth = 2.5)),
                                      # Defines gap size to not connect points with line
                                      gapSize = 2160000,
-                                     gapUnit = "value",
-                                     # Controls when points are shown on plot (only on zoom)
-                                     marker = list(
-                                       enabledThreshold = 0.25
-                                     )
+                                     gapUnit = "value"
+                                     
         )) %>%
         hc_tooltip(crosshairs = TRUE,
                    valueDecimals = 2,
