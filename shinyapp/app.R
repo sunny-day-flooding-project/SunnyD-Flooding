@@ -400,7 +400,8 @@ ui <- bs4Dash::dashboardPage(
                     # status = "gray",
                     solidHeader = T,
                     p(strong("NOT FLOODING:"), " Water level measurements within this storm drain indicate that water is", em("likely not near the road surface."), align = "left",style="margin-bottom:0px;"),
-                    p(strong("FLOODING:"), " Water level measurements within this storm drain indicate that water is", em("likely on or near the road surface."), align = "left",style="margin-bottom:0px;"),
+                    p(strong("WARNING:"), " Water level measurements within this storm drain indicate that water is", em("likely near the road surface."), align = "left",style="margin-bottom:0px;"),
+                    p(strong("FLOODING:"), " Water level measurements within this storm drain indicate that water is", em("likely on the road surface."),"This status is triggered by a loss of communications with our underground sensor (meaning that our sensor is completely under water and can't transmit data)", align = "left",style="margin-bottom:0px;"),
                     p(strong("UNKNOWN:"), " Water level within this storm drain is unknown because the sensor has not reported water level recently.", align = "left",style="margin-bottom:0px;")
                 ),
                 
@@ -834,7 +835,7 @@ server <- function(input, output, session) {
     }
     
     else if(flood_status_reactive() == T){
-      if(time_since_last_measurement_value <= 120){
+      if(time_since_last_measurement_value <= 45){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -842,11 +843,11 @@ server <- function(input, output, session) {
                     title = p(
                       icon("info-circle"),
                       "  Flood Status: ",
-                      strong("FLOODING, ", style = "color:white;"),
+                      strong("WARNING", style = "color:white;"),
                       HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
-                    status = "danger",
+                    status = "warning",
                     solidHeader = T
                   )
         )
@@ -860,11 +861,11 @@ server <- function(input, output, session) {
                     title = p(
                       icon("info-circle"),
                       "  Flood Status: ",
-                      strong("UNKNOWN, ", style = "color:white;"),
+                      strong("FLOODING, ", style = "color:white;"),
                       HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
-                    status = "gray",
+                    status = "danger",
                     solidHeader = T
                   )
         )
