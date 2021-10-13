@@ -27,7 +27,7 @@ library(bs4Dash)
 
 
 # Source env variables if working on desktop
-# source("C:/Users/Adam Gold/Desktop/postgres_keys.R")
+# source("/Users/adam/Documents/SunnyD/sunnyday_postgres_keys.R")
 
 # HTML waiting screen for initial load
 waiting_screen <- tagList(
@@ -196,6 +196,17 @@ ui <- bs4Dash::dashboardPage(
       menuItem("Data", tabName = "Data", icon = icon("database")),
       menuItem("Flood Cam", tabName = "Pictures", icon = icon("camera")),
       menuItem("About", tabName = "About", icon = icon("info-circle"))
+    )
+  ),
+  controlbar = bs4Dash::dashboardControlbar(
+    controlbarItem( 
+      br(),
+      h2("Admin Login"),
+      passwordInput(inputId = "admin_pswd", label = "Password"),
+      actionButton(inputId = "admin_pswd_submit", label = "Log In", width = "100px"), 
+      actionButton(inputId = "admin_logout", label = "Log Out", status = "secondary"), 
+      br(),
+      uiOutput(outputId = "admin_status")
     )
   ),
   body = bs4Dash::dashboardBody(
@@ -519,6 +530,11 @@ server <- function(input, output, session) {
                    html = spin_3k(),
                    color = transparent(.75)) 
   
+  w_admin <- Waiter$new(id="admin_pswd_submit",
+                   html = spin_3k(),
+                   color = transparent(.75)
+                   ) 
+  
   output$dateRange <- renderUI({
     dateRangeInput(
       inputId = 'dateRange',
@@ -577,6 +593,106 @@ server <- function(input, output, session) {
                  # for mobile browsers
                  removeClass(selector = "body", class = "sidebar-open")
                })
+  
+  admin_login_status <- reactiveVal(value = F)
+  
+  output$admin_status <- renderUI(
+    span(p("Status: ",style="display:inline-block;font-weight: bold;"), p("Logged out", style="display:inline-block;")) 
+  )
+  
+  observeEvent(input$admin_pswd_submit, {
+    req(input$admin_pswd, admin_login_status() == F)
+    
+    w_admin$show()
+    
+    if(isolate(input$admin_pswd) == Sys.getenv("ADMIN_PSWD")){
+      
+      admin_login_status(T)
+      
+      updateActionButton(inputId = "admin_pswd_submit",
+                         icon = tags$i(
+                           class = "fas fa-check-circle", 
+                           style = "color: rgb(0,166,90)"
+                         ))
+      
+      toast(
+        title = "🎉 Logged in! 🎉",
+        options = list(
+          autohide = TRUE,
+          # icon = "fas fa-check",
+          close = FALSE,
+          delay = 3000,
+          position = "topRight"
+        )
+      )
+      
+      output$admin_status <- renderUI(
+        span(p("Status: ",style="display:inline-block;font-weight: bold;"), p("Logged in", style="display:inline-block;")) 
+      )
+      
+      w_admin$hide()
+    }
+    
+    if(isolate(input$admin_pswd) != Sys.getenv("ADMIN_PSWD")){
+      
+      w_admin$show()
+      
+      updateActionButton(inputId = "admin_pswd_submit",
+                         icon = tags$i(
+                           class = "fas fa-times-circle", 
+                           style = "color: red"
+                         ))
+      
+      toast(
+        title = "Incorrect password!",
+        options = list(
+          autohide = TRUE,
+          icon = "fas fa-times-circle",
+          close = FALSE,
+          delay = 3000,
+          position = "topRight"
+        )
+      )
+      
+      output$admin_status <- renderUI(
+        span(p("Status: ",style="display:inline-block;font-weight: bold;"), p("Logged out", style="display:inline-block;")) 
+      )
+      
+      w_admin$hide()
+    }
+  })
+  
+  observeEvent(input$admin_logout, {
+    req(isolate(admin_login_status() == T))
+    
+    w_admin$show()
+    
+    admin_login_status(F)
+    
+    updateActionButton(inputId = "admin_pswd_submit",
+                       icon = tags$i(
+                         class = "fas fa-times-circle", 
+                         style = "color: red"
+                       ))
+    
+    toast(
+      title = "Logged out!",
+      options = list(
+        autohide = TRUE,
+        icon = "fas fa-times-circle",
+        close = FALSE,
+        delay = 3000,
+        position = "topRight"
+      )
+    )
+    
+    output$admin_status <- renderUI(
+      span(p("Status: ",style="display:inline-block;font-weight: bold;"), p("Logged out", style="display:inline-block;")) 
+    )
+    
+    w_admin$hide()
+  }
+  )
   
   # Load Data
   # Update sensor locations with most recent data from database
@@ -728,8 +844,8 @@ server <- function(input, output, session) {
       collect() %>% 
       mutate(time_since_survey = time_length(date - wl_offset_df$start_date),
              time_since_survey = ifelse(time_since_survey >= 0, time_since_survey, 0),
-             sensor_water_level = sensor_water_level - (time_since_survey*wl_offset_df$slope),
-             road_water_level = road_water_level - (time_since_survey*wl_offset_df$slope))
+             sensor_water_level_adj = sensor_water_level - (time_since_survey*wl_offset_df$slope),
+             road_water_level_adj = road_water_level - (time_since_survey*wl_offset_df$slope))
     
   })
   
@@ -804,7 +920,7 @@ server <- function(input, output, session) {
                   options = list(
                     title = p(
                       icon("info-circle"),
-                      "  Flood Status: ",
+                      "  Roadway Flood Status: ",
                       strong("NOT FLOODING, ", style = "color:white;"),
                       HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
@@ -822,7 +938,7 @@ server <- function(input, output, session) {
                   options = list(
                     title = p(
                       icon("info-circle"),
-                      "  Flood Status: ",
+                      "  Roadway Flood Status: ",
                       strong("UNKNOWN, ", style = "color:white;"),
                       HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
@@ -842,7 +958,7 @@ server <- function(input, output, session) {
                   options = list(
                     title = p(
                       icon("info-circle"),
-                      "  Flood Status: ",
+                      "  Roadway Flood Status: ",
                       strong("WARNING", style = "color:white;"),
                       HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
@@ -860,7 +976,7 @@ server <- function(input, output, session) {
                   options = list(
                     title = p(
                       icon("info-circle"),
-                      "  Flood Status: ",
+                      "  Roadway Flood Status: ",
                       strong("FLOODING, ", style = "color:white;"),
                       HTML(time_since_last_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
@@ -1183,7 +1299,7 @@ server <- function(input, output, session) {
         road_elevation_limit <- 0
         sensor_elevation_limit <- plot_sensor_stats$sensor_elevation - plot_sensor_stats$road_elevation
         y_axis_max <- ifelse(nrow(x) != 0,
-                             c(ifelse(max(x$road_water_level, na.rm=T) > road_elevation_limit, max(x$road_water_level, na.rm=T) , road_elevation_limit+0.25)),
+                             c(ifelse(max(x$road_water_level_adj, na.rm=T) > road_elevation_limit, max(x$road_water_level_adj, na.rm=T) , road_elevation_limit+0.25)),
                              c(NA))
       }
       
@@ -1193,13 +1309,13 @@ server <- function(input, output, session) {
         road_elevation_limit <- plot_sensor_stats$road_elevation
         sensor_elevation_limit <- plot_sensor_stats$sensor_elevation
         y_axis_max <- ifelse(nrow(x)!=0,
-                             c(ifelse(max(x$sensor_water_level, na.rm=T) > road_elevation_limit, max(x$sensor_water_level, na.rm=T) , road_elevation_limit +0.25 )),
+                             c(ifelse(max(x$sensor_water_level_adj, na.rm=T) > road_elevation_limit, max(x$sensor_water_level_adj, na.rm=T) , road_elevation_limit +0.25 )),
                              c(NA))
         
       }
       
       hc <- highchart() %>%
-        hc_add_series(data = x %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level","sensor_water_level")),
+        hc_add_series(data = x %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level_adj","sensor_water_level_adj")),
                       hcaes(x=date,
                             y = wl),
                       type="line",
@@ -1305,6 +1421,32 @@ server <- function(input, output, session) {
                                      color="#01CB4D",
                                      visible = T)
         }
+      }
+      
+      if(admin_login_status() == T){
+        hc <- hc %>% 
+          hc_add_series(data = x %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level","sensor_water_level")),
+                        hcaes(x=date,
+                              y = wl),
+                        type="line",
+                        name="Water Level (unadjusted)",
+                        color="#4da9f0",
+                        visible = T,
+                        # Controls when points are shown on plot (only on zoom)
+                        marker = list(
+                          enabledThreshold = 0.25
+                        )) %>% 
+          hc_add_series(data = x %>% dplyr::select(date,voltage),
+                        hcaes(x=date,
+                              y = voltage/10),
+                        type="line",
+                        name="Battery (Voltage/10)",
+                        color="#ffde05",
+                        visible = F,
+                        # Controls when points are shown on plot (only on zoom)
+                        marker = list(
+                          enabledThreshold = 0.25
+                        ))
       }
       
       hc
