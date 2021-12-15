@@ -138,41 +138,6 @@ time_converter <- function(x){
   )
 }
 
-get_wl_offset <- function(id, info_db, db){
-  start_date <- info_db %>% 
-    filter(sensor_ID == !!id) %>% 
-    pull(date_surveyed) 
-  
-  start_date_max <- start_date + days(2)
-  
-  start_wl <- db %>%
-    filter(sensor_ID == !!id) %>% 
-    filter(date >= !!start_date & date <= !!start_date_max) %>% 
-    collect() %>% 
-    summarise(date = !!start_date,
-              min_wl = min(sensor_water_level, na.rm=T))
-  
-  end_date <- db %>%
-    filter(sensor_ID == !!id) %>% 
-    filter(date == max(date, na.rm=T)) %>% 
-    collect() %>% 
-    pull(date)
-  
-  end_date_min <- end_date - days(2)
-  
-  end_wl <- db %>%
-    filter(sensor_ID == !!id) %>% 
-    filter(date >= !!end_date_min & date <= !!end_date) %>% 
-    collect() %>% 
-    summarise(date = !!end_date,
-              min_wl = min(sensor_water_level, na.rm=T))
-  
-  return(end_wl$min_wl - start_wl$min_wl)
-  
-}
-
-
-
 jsCode <- "shinyjs.init = function() {
   $(document).on('shiny:sessioninitialized', function (e) {
   var mobile = window.matchMedia('only screen and (max-width: 768px)').matches;
@@ -471,7 +436,7 @@ ui <- bs4Dash::dashboardPage(
                          br(),
                          p("Data will be downloaded as a .csv file named",strong("site name_minimum date_maximum date.csv"),align="center"),
                          br(),
-                         div(actionButton(inputId = "downloadData", label = "Download Selected Data", class = "download_button", icon = icon("download")), align="center")
+                         div(downloadButton(outputId = "downloadData", label = "Download Selected Data", class = "download_button", icon = icon("download")), align="center")
                        )
                 )
                 
@@ -775,11 +740,20 @@ server <- function(input, output, session) {
   
   observeEvent(input$get_plot_data,{
     data_n <- 10 * 24 * (input$dateRange[2] - input$dateRange[1])
+    admin_login_nonreactive <- admin_login_status()
     
     if(data_n > 7440){
+      
+      if(admin_login_nonreactive == F){
       shinyalert::shinyalert(type="error", 
                              title="Data request is too large",
                              text="Please select a shorter time span. Maximum request is 30 days .")
+      }
+      
+      if(admin_login_nonreactive == T){
+        reactive_min_date(input$dateRange[1] %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
+        reactive_max_date(input$dateRange[2] %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
+      }
     }
     if(data_n <= 7440){
       reactive_min_date(input$dateRange[1] %>% as_datetime() %>% force_tz("America/New_York") %>% with_tz("UTC"))
@@ -787,47 +761,7 @@ server <- function(input, output, session) {
     }
   })
   
-  wl_offset <- reactive({
-    req(input$data_sensor)
-    
-    start_date <- sensor_locations %>% 
-      filter(sensor_ID == !!input$data_sensor) %>% 
-      pull(date_surveyed) 
-    
-    start_date_max <- start_date + days(2)
-    
-    start_wl <- database %>%
-      filter(sensor_ID %in% !!input$data_sensor) %>% 
-      filter(date >= !!start_date & date <= !!start_date_max) %>% 
-      collect() %>% 
-      summarise(date = !!start_date,
-                min_wl = min(sensor_water_level, na.rm=T))
-    
-    end_date <- database %>%
-      filter(sensor_ID %in% !!input$data_sensor) %>% 
-      filter(date == max(date, na.rm=T)) %>% 
-      collect() %>% 
-      pull(date)
-    
-    end_date_min <- end_date - days(2)
-    
-    end_wl <- database %>%
-      filter(sensor_ID %in% !!input$data_sensor) %>% 
-      filter(date >= !!end_date_min & date <= !!end_date) %>% 
-      collect() %>% 
-      summarise(date = !!end_date,
-                min_wl = min(sensor_water_level, na.rm=T))
-    
-    tibble::tibble(start_date = start_date,
-                   end_date = end_date, 
-                   duration = time_length(end_date - start_date),
-                   diff = end_wl$min_wl - start_wl$min_wl,
-                   slope = diff/duration)
-    
-  })
-  
-  
-  
+
   # Reactive value that stores the data from the selected sensor site, filtered by date range
   sensor_data <- reactive({
     req(input$data_sensor)
@@ -858,7 +792,7 @@ server <- function(input, output, session) {
   
   output$downloadData <- downloadHandler(
     filename = function() {
-      paste(input$data_sensor, reactive_min_date(),reactive_max_date(), ".csv", sep="_")
+      paste0(input$data_sensor, "_",format(reactive_min_date(),"%Y%m%d"), "_",format(reactive_max_date(), "%Y%m%d"), ".csv")
     },
     content = function(file) {
       write.csv(sensor_data(), file)
