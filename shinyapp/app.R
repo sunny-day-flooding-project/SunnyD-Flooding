@@ -62,17 +62,20 @@ onStop(function() {
 database <- con %>% 
   tbl("sensor_data_processed")
 
+drift_corrected_database <- con %>% 
+  tbl("sensor_data_drift_corrected")
+
 global <- getOption("highcharter.global")
 global$useUTC <- FALSE
 global$timezoneOffset <- -300
 options(highcharter.global = global)
 
 get_thirdparty_metadata <- function(location){
-  if(location == "Beaufort, North Carolina"){
-    return(tibble("entity"= "NOAA",
-                  "url" = "https://tidesandcurrents.noaa.gov/waterlevels.html?id=8656483",
-                  "types"=list(c("obs","pred"))))
-  }
+  switch(location,
+         "Beaufort, North Carolina" = tibble("entity"= "NOAA",
+                                             "url" = "https://tidesandcurrents.noaa.gov/waterlevels.html?id=8656483",
+                                             "types"=list(c("obs","pred")))
+  )
 }
 
 # Define functions to get local water levels from each location
@@ -167,6 +170,8 @@ get_wl_offset <- function(id, info_db, db){
   return(end_wl$min_wl - start_wl$min_wl)
   
 }
+
+
 
 jsCode <- "shinyjs.init = function() {
   $(document).on('shiny:sessioninitialized', function (e) {
@@ -699,19 +704,13 @@ server <- function(input, output, session) {
   sensor_locations <- con %>% 
     tbl("sensor_locations") %>%
     collect() %>%
-    left_join(database %>%
+    left_join(drift_corrected_database %>%
                 group_by(sensor_ID) %>%
-                filter(qa_qc_flag == F) %>% 
                 filter(date == max(date, na.rm=T)) %>% 
                 collect() %>% 
-                mutate(wl_offset_nonreactive = get_wl_offset(id = sensor_ID, 
-                                                             info_db = con %>% 
-                                                               tbl("sensor_locations") %>%
-                                                               collect(), 
-                                                             db = database)) %>% 
-                mutate(sensor_water_level = sensor_water_level - wl_offset_nonreactive,
-                       road_water_level = road_water_level - wl_offset_nonreactive),
-              by=c("place", "sensor_ID", "sensor_elevation", "road_elevation")) %>%
+                mutate(sensor_water_level = sensor_water_level_adj,
+                       road_water_level = road_water_level_adj),
+              by=c("place", "sensor_ID", "sensor_elevation", "road_elevation")) %>% 
     mutate(date_lst = lubridate::with_tz(date, tzone = "America/New_York")) %>% 
     sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
     mutate(
@@ -835,17 +834,11 @@ server <- function(input, output, session) {
     
     input$refresh_button
     
-    wl_offset_df <- isolate(wl_offset())
-
-    database %>%
+    drift_corrected_database %>%
       filter(sensor_ID %in% !!input$data_sensor) %>%
       filter(date >= !!reactive_min_date() & date < !!reactive_max_date(),
              qa_qc_flag == F) %>% 
-      collect() %>% 
-      mutate(time_since_survey = time_length(date - wl_offset_df$start_date),
-             time_since_survey = ifelse(time_since_survey >= 0, time_since_survey, 0),
-             sensor_water_level_adj = sensor_water_level - (time_since_survey*wl_offset_df$slope),
-             road_water_level_adj = road_water_level - (time_since_survey*wl_offset_df$slope))
+      collect() 
     
   })
   
@@ -853,7 +846,6 @@ server <- function(input, output, session) {
   observeEvent(input$refresh_button,{
     toast(
       title = "Refreshed!",
-      # body = h4("Plot is up to date"),
       options = list(
         autohide = TRUE,
         icon = "fas fa-check",
@@ -900,14 +892,11 @@ server <- function(input, output, session) {
     req(input$data_sensor)
     last_datetime <- sensor_locations %>% filter(sensor_ID == input$data_sensor) %>% pull(date)
     time_difference <- time_length(((Sys.time() %>% with_tz("UTC"))-last_datetime), unit="minute")
-    # print(time_difference)
     return(round(time_difference))
   })
   
   # showing the banner of flood alert status
   observe({
-    # req(flood_status_reactive(), time_since_last_measurement())
-    
     time_since_last_measurement_value <- time_since_last_measurement()
     
     time_since_last_measurement_text <- time_converter(time_since_last_measurement_value)
@@ -1144,29 +1133,19 @@ server <- function(input, output, session) {
     reactive_selection$overall_data_sensor_choices <- sensor_locations$sensor_ID[sensor_locations$place == input$data_location]
   })
   
-  # Updates the choices for the sensor ID on the data tab
+  # Updates the choices for the camera ID on the data tab
   observe({
     reactive_selection$overall_camera_choices <- camera_locations$camera_ID[camera_locations$place == input$camera_location]
   })
   
-  # Updates the reactive values for data sensor and location on the Data tab using click on Map tab
-  observe({
-    if(input$map_layers == 1){
-      reactive_selection$overall_data_sensor <- input$m_marker_click
-      reactive_selection$overall_data_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
-      reactive_selection$overall_camera_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
-      
-    }
-    
-    if(input$map_layers == 2){
-      reactive_selection$overall_camera <- input$m_marker_click
-      reactive_selection$overall_camera_location <- unique(camera_locations$place[camera_locations$camera_ID == input$m_marker_click$id])
-      reactive_selection$overall_data_location <- unique(camera_locations$place[camera_locations$camera_ID == input$m_marker_click$id])
-      
-    }
-  })
-  
+
   observeEvent(input$m_marker_click,{
+    reactive_selection$overall_data_sensor <- input$m_marker_click
+    reactive_selection$overall_data_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
+    reactive_selection$overall_camera_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
+    
+    reactive_selection$overall_camera <- input$m_marker_click
+
     if(input$map_layers == 1){ 
       updateNavbarPage(session, 
                        inputId = "nav",
