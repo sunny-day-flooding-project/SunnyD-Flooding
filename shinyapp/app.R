@@ -1380,15 +1380,20 @@ server <- function(input, output, session) {
       
       time <- con %>% 
         tbl("photo_info") %>% 
+        group_by(camera_ID) %>% 
         filter(DateTimeOriginalUTC == max(DateTimeOriginalUTC, na.rm=T)) %>% 
-        pull(DateTimeOriginalUTC) %>% 
-        lubridate::with_tz(tzone="America/New_York")
+        collect()
       
       realtime_img <- magick::image_read(paste0("https://photos-sunnydayflood.apps.cloudapps.unc.edu/public/",input$camera_ID,".jpg")) 
       
+      site_time <- time %>% 
+        filter(camera_ID == input$camera_ID) %>% 
+        pull(DateTimeOriginalUTC) %>%
+        lubridate::with_tz(tzone="America/New_York")
+    
       realtime_img %>% 
-        image_annotate(paste0(format(time, "%I:%M %p", usetz = T)," - ",format(time, "%b %d, %Y")), size = 40, color = "white", boxcolor = "black",
-                       degrees = 0, gravity = "north") %>% 
+        image_annotate(paste0(format(site_time, "%I:%M %p", usetz = T)," - ",format(site_time, "%b %d, %Y")), size = 40, color = "white", boxcolor = "black",
+                       degrees = 0, gravity = "north") %>%
         magick::image_write(path = outfile)
       
       # Return a list

@@ -6,7 +6,7 @@ monitoring sites.
 
 </br>
 
-**More sensors coming Fall 2021**
+**More sensors coming Spring 2022**
 
 </br>
 
