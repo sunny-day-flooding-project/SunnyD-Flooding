@@ -1,0 +1,5 @@
+name,type
+lyr1,dbl
+area,[US_survey_foot^2]
+water_elevation,[ft]
+geometry,POLYGON [US_survey_foot]

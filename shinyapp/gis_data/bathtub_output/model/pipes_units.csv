@@ -1,0 +1,19 @@
+name,type
+edgeID,dbl
+diam,[in]
+from,int
+to,int
+from_elev,[ft]
+to_elev,[ft]
+from_depth,[ft]
+to_depth,[ft]
+from_inv_elev,[ft]
+to_inv_elev,[ft]
+length,[US_survey_foot]
+from_strucID,int
+from_s_inv_elev,[ft]
+to_strucID,int
+to_s_inv_elev,[ft]
+geometry,LINESTRING [US_survey_foot]
+interp_dn,chr
+interp_up,chr
