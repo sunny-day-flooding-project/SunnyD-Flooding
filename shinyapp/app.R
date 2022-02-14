@@ -59,11 +59,8 @@ onStop(function() {
   poolClose(con)
 })
 
-database <- con %>% 
-  tbl("sensor_data_processed")
-
-drift_corrected_database <- con %>% 
-  tbl("sensor_data_drift_corrected")
+data_for_display <- con %>% 
+  tbl("data_for_display")
 
 global <- getOption("highcharter.global")
 global$useUTC <- FALSE
@@ -666,16 +663,12 @@ server <- function(input, output, session) {
   
   # Load Data
   # Update sensor locations with most recent data from database
-  sensor_locations <- con %>% 
-    tbl("sensor_locations") %>%
-    collect() %>%
-    left_join(drift_corrected_database %>%
+  sensor_locations <- data_for_display %>%
                 group_by(sensor_ID) %>%
                 filter(date == max(date, na.rm=T)) %>% 
                 collect() %>% 
                 mutate(sensor_water_level = sensor_water_level_adj,
-                       road_water_level = road_water_level_adj),
-              by=c("place", "sensor_ID", "sensor_elevation", "road_elevation")) %>% 
+                       road_water_level = road_water_level_adj) %>% 
     mutate(date_lst = lubridate::with_tz(date, tzone = "America/New_York")) %>% 
     sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
     mutate(
@@ -683,12 +676,11 @@ server <- function(input, output, session) {
         '<div>',
         '<h4 align="center"><strong>Site ',sensor_ID,'</h4></strong>',
         '<h5 align="center">Last level:</h5>',
-        '<h4 align="center">',round(road_water_level, digits = 2),'</h4>',
+        '<h4 align="center">',round(road_water_level_adj, digits = 2),'</h4>',
         '<p align="center">',paste0(format(date_lst, "%I:%M %p", usetz = T)," - ",format(date_lst, "%b %d, %Y")),'</p>',
         '<p align="center">Click to view data at this site</p>'
       )
-    ) %>% 
-    mutate(flood_status = sensor_water_level > alert_threshold)
+    )
   
   camera_locations <- con %>% 
     tbl("camera_locations") %>%
@@ -769,7 +761,7 @@ server <- function(input, output, session) {
     
     input$refresh_button
     
-    drift_corrected_database %>%
+    data_for_display %>%
       filter(sensor_ID %in% !!input$data_sensor) %>%
       filter(date >= !!reactive_min_date() & date < !!reactive_max_date(),
              qa_qc_flag == F) %>% 
@@ -817,27 +809,68 @@ server <- function(input, output, session) {
     selectInput("camera_ID", "Camera", choices = reactive_selection$overall_camera_choices, selected = reactive_selection$overall_camera_ID, selectize = F,multiple = F)
   })
   
-  flood_status_reactive <- reactive({
-    req(input$data_sensor)
-    status <- sensor_locations %>% filter(sensor_ID == input$data_sensor) %>% pull(flood_status)
-    return(status)
+  map_flood_status_reactive <- reactive({
+    # input$refresh_button
+    
+    return(
+      data_for_display %>%
+        group_by(sensor_ID) %>%
+        slice_max(n = 3, order_by = date) %>%
+        collect() %>%
+        mutate(
+          sample_interval = lag(date) - date,
+          min_interval = min(sample_interval, na.rm = T),
+          current_time = Sys.time() %>% lubridate::with_tz(tzone = "UTC")
+        ) %>%
+        filter(date == max(date, na.rm = T)) %>%
+        mutate(
+          above_alert_wl = sensor_water_level_adj >= alert_threshold,
+          time_since_measurement = difftime(current_time,date, unit = "mins"),
+          time_since_measurement_text = time_converter(time_since_measurement),
+          is_current = (time_since_measurement <= (min_interval + 6 + 6 + 3)),
+          flood_status = ifelse(above_alert_wl & !is_current, "FLOODING", 
+                                ifelse(above_alert_wl & is_current, "WARNING", 
+                                       ifelse(!above_alert_wl & is_current, "NOT FLOODING",
+                                              "UNKNOWN"))) 
+        ) %>% 
+        dplyr::select(sensor_ID, flood_status)
+    )
   })
   
-  time_since_last_measurement <- reactive({
+  flood_status_reactive <- reactive({
     req(input$data_sensor)
-    last_datetime <- sensor_locations %>% filter(sensor_ID == input$data_sensor) %>% pull(date)
-    time_difference <- time_length(((Sys.time() %>% with_tz("UTC"))-last_datetime), unit="minute")
-    return(round(time_difference))
+    input$refresh_button
+    
+    return(
+      data_for_display %>%
+        filter(sensor_ID == !!input$data_sensor) %>%
+        slice_max(n = 3, order_by = date) %>%
+        collect() %>%
+        mutate(
+          sample_interval = lag(date) - date,
+          min_interval = min(sample_interval, na.rm = T),
+          current_time = Sys.time() %>% lubridate::with_tz(tzone = "UTC")
+        ) %>%
+        filter(date == max(date, na.rm = T)) %>%
+        mutate(
+          above_alert_wl = sensor_water_level_adj >= alert_threshold,
+          time_since_measurement = difftime(current_time,date, unit = "mins"),
+          time_since_measurement_text = time_converter(time_since_measurement),
+          is_current = (time_since_measurement <= (min_interval + 6 + 6 + 3)),
+          flood_status = ifelse(above_alert_wl & !is_current, "FLOODING", 
+                                ifelse(above_alert_wl & is_current, "WARNING", 
+                                       ifelse(!above_alert_wl & is_current, "NOT FLOODING",
+                                              "UNKNOWN")))
+        )
+    )
   })
+  
   
   # showing the banner of flood alert status
   observe({
-    time_since_last_measurement_value <- time_since_last_measurement()
+    flood_status_df <- flood_status_reactive()
     
-    time_since_last_measurement_text <- time_converter(time_since_last_measurement_value)
-    
-    if(flood_status_reactive() == F){
-      if(time_since_last_measurement_value <= 45){
+    if(flood_status_df$flood_status == "NOT FLOODING"){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -846,7 +879,7 @@ server <- function(input, output, session) {
                       icon("info-circle"),
                       "  Roadway Flood Status: ",
                       strong("NOT FLOODING, ", style = "color:white;"),
-                      HTML(time_since_last_measurement_text),
+                      HTML(flood_status_df$time_since_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
                     status = "success",
@@ -855,7 +888,7 @@ server <- function(input, output, session) {
         )
       }
       
-      else(
+      else if(flood_status_df$flood_status == "UNKNOWN"){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -864,18 +897,16 @@ server <- function(input, output, session) {
                       icon("info-circle"),
                       "  Roadway Flood Status: ",
                       strong("UNKNOWN, ", style = "color:white;"),
-                      HTML(time_since_last_measurement_text),
+                      HTML(flood_status_df$time_since_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
                     status = "gray",
                     solidHeader = T
                   )
         )
-      )
     }
     
-    else if(flood_status_reactive() == T){
-      if(time_since_last_measurement_value <= 45){
+    else if(lood_status_df$flood_status == "WARNING"){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -884,7 +915,7 @@ server <- function(input, output, session) {
                       icon("info-circle"),
                       "  Roadway Flood Status: ",
                       strong("WARNING", style = "color:white;"),
-                      HTML(time_since_last_measurement_text),
+                      HTML(flood_status_df$time_since_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
                     status = "warning",
@@ -893,7 +924,7 @@ server <- function(input, output, session) {
         )
       }
       
-      else(
+      else if(lood_status_df$flood_status == "FLOODING"){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -902,14 +933,13 @@ server <- function(input, output, session) {
                       icon("info-circle"),
                       "  Roadway Flood Status: ",
                       strong("FLOODING, ", style = "color:white;"),
-                      HTML(time_since_last_measurement_text),
+                      HTML(flood_status_df$time_since_measurement_text),
                       style = "margin-bottom: 0px;display:inline;"
                     ),
                     status = "danger",
                     solidHeader = T
                   )
         )
-      )
     }
   })
   
@@ -922,20 +952,32 @@ server <- function(input, output, session) {
                              addProviderTiles(group = "Imagery",provider = providers$Esri.WorldImagery) %>%
                              addTiles(group = "OSM") %>%
                              setView(lng = -77.360784, lat = 34.576053, zoom = 8) %>%
-                             addCircleMarkers(data = sensor_locations, group = "sensor_site",
+                             addCircleMarkers(data = sensor_locations %>% 
+                                                left_join(isolate(map_flood_status_reactive())), group = "sensor_site",
                                               # popup = ~html_popups,
                                               label = lapply(sensor_locations_labels,HTML),
                                               labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
                                               clusterOptions = markerClusterOptions(),
                                               clusterId = "place",
                                               layerId = sensor_locations$sensor_ID,
-                                              color = "black", 
-                                              fillColor = ~pal(road_water_level), 
+                                              color = "black",
+                                              fillColor = switch(sensor_locations %>% 
+                                                                   left_join(isolate(map_flood_status_reactive())) %>% 
+                                                                   pull(flood_status),
+                                                                 "UNKNOWN" = "grey",
+                                                                 "FLOODING" = "#dc3545",
+                                                                 "WARNING" = "#ffc107",
+                                                                 "NOT FLOODING" = "#28a745"), 
                                               fillOpacity = 1) %>% 
-                             leaflet::addLegend('bottomright', pal = pal_rev, values = c(-3.5,0.5),
-                                                title = 'Water level<br>relative to<br>surface (ft)',
-                                                opacity = 1,
-                                                labFormat = labelFormat(transform = function(x) sort(x, decreasing = TRUE))) %>% 
+                             # leaflet::addLegend('bottomright', pal = pal_rev, values = c(-3.5,0.5),
+                             #                    title = 'Water level<br>relative to<br>surface (ft)',
+                             #                    opacity = 1,
+                             #                    labFormat = labelFormat(transform = function(x) sort(x, decreasing = TRUE))) %>% 
+                             leaflet::addLegend('bottomright',
+                                                title = "Flood status",
+                                                colors = c("grey","#dc3545","#ffc107","#28a745"),
+                                                labels = c("Unknown","Flooding", "Warning", "Not Flooding"),
+                                                opacity = 1) %>% 
                              addLayersControl(
                                baseGroups = c("Positron (default)", "Dark Matter","Imagery", "OSM"),
                                options = layersControlOptions(collapsed = T)) %>% 
@@ -1104,8 +1146,10 @@ server <- function(input, output, session) {
   })
   
   plot_missing_data_shading <- reactive({
-    req(input$data_sensor, time_since_last_measurement())
-    if(time_since_last_measurement() >= 45){
+    req(input$data_sensor, isolate(flood_status_reactive()))
+    input$refresh_button
+    
+    if(!isolate(flood_status_reactive())$is_current){
       return(datetime_to_timestamp(sensor_locations %>% filter(sensor_ID == input$data_sensor) %>% pull(date)))
     }
     else(return(NULL))
