@@ -695,6 +695,7 @@ server <- function(input, output, session) {
     collect() %>% 
     left_join(con %>% 
                 tbl("photo_info") %>% 
+                group_by(camera_ID) %>% 
                 filter(DateTimeOriginalUTC == max(DateTimeOriginalUTC, na.rm=T)) %>% 
                 collect(), by = c("camera_ID")) %>% 
     mutate(date_lst = lubridate::with_tz(DateTimeOriginalUTC , tzone = "America/New_York")) %>% 
