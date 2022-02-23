@@ -72,7 +72,7 @@ options(highcharter.global = global)
 
 get_thirdparty_metadata <- function(location){
   switch(location,
-         "Beaufort, North Carolina" = tibble("entity"= "NOAA",
+         "beaufort, north carolina" = tibble("entity"= "NOAA",
                                              "url" = "https://tidesandcurrents.noaa.gov/waterlevels.html?id=8656483",
                                              "types"=list(c("obs","pred")))
   )
@@ -81,7 +81,7 @@ get_thirdparty_metadata <- function(location){
 # Define functions to get local water levels from each location
 get_thirdparty_wl <- function(location, type, min_date, max_date) {
   # Beaufort uses NOAA for water levels and predictions
-  if(location == "Beaufort, North Carolina"){
+  if(location == "beaufort, north carolina"){
     request <-
       httr::GET(
         url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
@@ -669,12 +669,14 @@ server <- function(input, output, session) {
   sensor_locations <- con %>% 
     tbl("sensor_locations") %>%
     collect() %>%
+    mutate(place = tolower(place)) %>% 
     left_join(drift_corrected_database %>%
                 group_by(sensor_ID) %>%
                 filter(date == max(date, na.rm=T)) %>% 
                 collect() %>% 
                 mutate(sensor_water_level = sensor_water_level_adj,
-                       road_water_level = road_water_level_adj),
+                       road_water_level = road_water_level_adj,
+                       place = tolower(place)),
               by=c("place", "sensor_ID", "sensor_elevation", "road_elevation")) %>% 
     mutate(date_lst = lubridate::with_tz(date, tzone = "America/New_York")) %>% 
     sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
