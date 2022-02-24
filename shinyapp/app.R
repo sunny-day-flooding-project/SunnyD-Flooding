@@ -151,7 +151,7 @@ ui <- bs4Dash::dashboardPage(
   title = "Data Viewer", 
   header = bs4Dash::dashboardHeader(
     border = F,
-    .list = list(span(HTML('<i class="fas fa-sun" style="color:#fbb040;display:inline;"></i>'),p("Sunny Day Flooding Project", style = "color:white;display:inline;"))
+    .list = list(span(tags$img(src = "logo.svg", height = '50'))
     )
   ),
   sidebar = bs4Dash::dashboardSidebar(
@@ -480,7 +480,7 @@ ui <- bs4Dash::dashboardPage(
   ),
   footer = dashboardFooter(
     left = p(em(strong("Disclaimer: "), "Data are preliminary and for informational use only.")),
-    right = "Copyright 2021 Sunny Day Flooding"
+    right = "Copyright 2022 Sunny Day Flooding"
   )
 )
 
