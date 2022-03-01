@@ -27,7 +27,7 @@ library(bs4Dash)
 
 
 # Source env variables if working on desktop
-# source("/Users/adam/Documents/SunnyD/sunnyday_postgres_keys.R")
+source("/Users/adam/Documents/SunnyD/sunnyday_postgres_keys.R")
 
 # HTML waiting screen for initial load
 waiting_screen <- tagList(
@@ -62,30 +62,24 @@ onStop(function() {
 data_for_display <- con %>% 
   tbl("data_for_display")
 
+sensor_surveys <- con %>% 
+  tbl("sensor_surveys")
+
 global <- getOption("highcharter.global")
 global$useUTC <- FALSE
 global$timezoneOffset <- -300
 options(highcharter.global = global)
 
-get_thirdparty_metadata <- function(location){
-  switch(location,
-         "Beaufort, North Carolina" = tibble("entity"= "NOAA",
-                                             "url" = "https://tidesandcurrents.noaa.gov/waterlevels.html?id=8656483",
-                                             "types"=list(c("obs","pred")))
-  )
-}
-
-# Define functions to get local water levels from each location
-get_thirdparty_wl <- function(location, type, min_date, max_date) {
-  # Beaufort uses NOAA for water levels and predictions
-  if(location == "Beaufort, North Carolina"){
-    request <-
+noaa_wl <- function(id, type, begin_date, end_date){
+  id <- as.character(id)
+  
+  request <-
       httr::GET(
         url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
         query = list(
-          "station" = "8656483",
-          "begin_date" = min_date,
-          "end_date" = max_date,
+          "station" = id,
+          "begin_date" = begin_date,
+          "end_date" = end_date,
           "product" = ifelse(type == "obs","water_level","predictions"),
           "units" = "english",
           "datum" = "NAVD",
@@ -113,7 +107,7 @@ get_thirdparty_wl <- function(location, type, min_date, max_date) {
     
     wl <- wl %>%
       transmute(
-        location = "Beaufort, North Carolina",
+        id = id,
         date = ymd_hm(date),
         level = as.numeric(level_ft_navd88),
         entity = ifelse(type == "obs", "NOAA Observed","NOAA Predictions"),
@@ -121,6 +115,19 @@ get_thirdparty_wl <- function(location, type, min_date, max_date) {
       )
     return(wl)
   }
+
+
+#wl_id, wl_src, wl_types, wl_url
+
+get_local_wl <- function(wl_id, wl_src, type, begin_date, end_date) {
+  # Each data source will have its own function called within this larger function
+  switch(toupper(wl_src),
+         "NOAA" = noaa_wl(id = wl_id,
+                          type = type,
+                          begin_date = begin_date,
+                          end_date = end_date)
+  )
+  
 }
 
 time_converter <- function(x){
@@ -148,7 +155,7 @@ ui <- bs4Dash::dashboardPage(
   title = "Data Viewer", 
   header = bs4Dash::dashboardHeader(
     border = F,
-    .list = list(span(HTML('<i class="fas fa-sun" style="color:#fbb040;display:inline;"></i>'),p("Sunny Day Flooding Project", style = "color:white;display:inline;"))
+    .list = list(span(tags$img(src = "logo.svg", height = '50'))
     )
   ),
   sidebar = bs4Dash::dashboardSidebar(
@@ -477,7 +484,7 @@ ui <- bs4Dash::dashboardPage(
   ),
   footer = dashboardFooter(
     left = p(em(strong("Disclaimer: "), "Data are preliminary and for informational use only.")),
-    right = "Copyright 2021 Sunny Day Flooding"
+    right = "Copyright 2022 Sunny Day Flooding"
   )
 )
 
@@ -663,6 +670,7 @@ server <- function(input, output, session) {
   
   # Load Data
   # Update sensor locations with most recent data from database
+
   sensor_locations <- data_for_display %>%
                 group_by(sensor_ID) %>%
                 filter(date == max(date, na.rm=T)) %>% 
@@ -1136,13 +1144,16 @@ server <- function(input, output, session) {
     }
   })
   
-  thirdparty_metadata <- reactive({
+  local_wl_metadata <- reactive({
     req(input$data_location)
-    get_thirdparty_metadata(location = input$data_location)
+    sensor_surveys %>% 
+      filter(place == input$data_location,
+             date == max(date, na.rm=T)) %>% 
+      collect()
   })
   
   output$thirdparty_info <- renderUI({
-    helpText("  Data source: ",a(href=thirdparty_metadata()$url,thirdparty_metadata()$entity, target = "_blank", class = "pretty-link"))
+    helpText("  Data source: ",a(href=local_wl_metadata()$url,local_wl_metadata()$wl_src, target = "_blank", class = "pretty-link"))
   })
   
   plot_missing_data_shading <- reactive({
@@ -1158,7 +1169,7 @@ server <- function(input, output, session) {
   
   observeEvent(c(input$get_plot_data, input$view_3rdparty_data),{
     req(input$view_3rdparty_data == T,
-        "obs" %in% unlist(thirdparty_metadata()$types),
+        "obs" %in% unlist(isolate(local_wl_metadata())$types),
         abs(input$dateRange[2] - input$dateRange[1]) <=30,
         nrow(sensor_data()!=0))
     
@@ -1168,10 +1179,11 @@ server <- function(input, output, session) {
     plot_sensor_stats <- sensor_locations %>%
       filter(sensor_ID %in% input$data_sensor)
     
-    plot_3rd_party_data_obs <<- get_thirdparty_wl(location = input$data_location,
-                                                  type = "obs",
-                                                  min_date = min_date %>% str_remove_all("-"),
-                                                  max_date = max_date %>% str_remove_all("-")) %>%
+    plot_3rd_party_data_obs <<- get_local_wl(wl_id = isolate(local_wl_metadata())$wl_id,
+                                             wl_src = isolate(local_wl_metadata())$wl_src,
+                                             type = "obs",
+                                             begin_date = min_date %>% str_remove_all("-"),
+                                             end_date = max_date %>% str_remove_all("-")) %>%
       mutate(date = datetime_to_timestamp(date),
              road_water_level= level-plot_sensor_stats$road_elevation,
              sensor_water_level=level)
@@ -1180,7 +1192,7 @@ server <- function(input, output, session) {
   
   observeEvent(c(input$get_plot_data, input$view_3rdparty_data),{
     req(input$view_3rdparty_data == T,
-        "pred" %in% unlist(thirdparty_metadata()$types),
+        "pred" %in% unlist(isolate(local_wl_metadata())$types),
         abs(input$dateRange[2] - input$dateRange[1]) <=30,
         nrow(sensor_data()!=0))
     
@@ -1190,10 +1202,11 @@ server <- function(input, output, session) {
     plot_sensor_stats <- sensor_locations %>% 
       filter(sensor_ID %in% input$data_sensor)
     
-    plot_3rd_party_data_predict <<- get_thirdparty_wl(location = input$data_location,
-                                                      type = "pred",
-                                                      min_date = min_date %>% str_remove_all("-"),
-                                                      max_date = max_date %>% str_remove_all("-")) %>% 
+    plot_3rd_party_data_predict <<- get_local_wl(wl_id = isolate(local_wl_metadata())$wl_id,
+                                                 wl_src = isolate(local_wl_metadata())$wl_src,
+                                                 type = "pred",
+                                                 begin_date = min_date %>% str_remove_all("-"),
+                                                 end_date = max_date %>% str_remove_all("-")) %>% 
       mutate(date = datetime_to_timestamp(date),
              road_water_level= level-plot_sensor_stats$road_elevation,
              sensor_water_level=level)
@@ -1358,7 +1371,7 @@ server <- function(input, output, session) {
       
       if(input$view_3rdparty_data == T){
         
-        plot_3rd_party_data_stats <- thirdparty_metadata()
+        plot_3rd_party_data_stats <- local_wl_metadata()
         
         if("obs" %in% unlist(plot_3rd_party_data_stats$types)){
           hc <- hc %>% hc_add_series(plot_3rd_party_data_obs %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level","sensor_water_level")),
