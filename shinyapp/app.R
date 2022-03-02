@@ -408,7 +408,7 @@ ui <- bs4Dash::dashboardPage(
                            column(width = 3,
                                   selectInput(inputId = "elev_datum", label = "Elevation Datum", selectize = F,choices = c("Road","NAVD88"), selected = "Road"),
                                   p(strong("Local water levels"),tippy(icon("info-circle",style="font-size:14px"), h5("Click the button below to add nearby downstream water levels to the plot.",br(),br(),"Adding these data can help visualize when flooding may occur.",br(),br(),"Turning this option on may slow down the drawing of the plot.",style = "text-align:left;"))),
-                                  switchInput(inputId = "view_3rdparty_data", label = ,value = F, size = "mini",inline=T),
+                                  materialSwitch(inputId = "view_3rdparty_data", label = ,value = F,inline=T, status = "success"),
                                   uiOutput(outputId="thirdparty_info", style="display:inline;")
                            ),
                            column(width=1),
@@ -1153,6 +1153,7 @@ server <- function(input, output, session) {
     }
   })
   
+  
   local_wl_metadata <- reactive({
     req(input$data_sensor)
     
@@ -1168,9 +1169,14 @@ server <- function(input, output, session) {
   
   output$thirdparty_info <- renderUI({
     wl_metadata_collected <- local_wl_metadata()
+    if(!is.na(wl_metadata_collected$wl_url)){
+      helpText("  Data source: ",a(href=wl_metadata_collected$wl_url,wl_metadata_collected$wl_src, target = "_blank", class = "pretty-link"))
+    }
     
-    helpText("  Data source: ",a(href=wl_metadata_collected$wl_url,wl_metadata_collected$wl_src, target = "_blank", class = "pretty-link"))
+    else(helpText("  Not available"))
+
   })
+  
   
   plot_missing_data_shading <- reactive({
     req(input$data_sensor, isolate(flood_status_reactive()))
@@ -1184,9 +1190,17 @@ server <- function(input, output, session) {
   
   observeEvent(input$data_sensor, {
     
-    updateSwitchInput(session, 
+    updateMaterialSwitch(session, 
                       inputId = "view_3rdparty_data",
                       value = F)
+    
+    if(is.na(isolate(local_wl_metadata()$wl_url))){
+      shinyjs::disable(id = "view_3rdparty_data")
+    }
+    
+    if(!is.na(isolate(local_wl_metadata()$wl_url))){
+      shinyjs::enable(id = "view_3rdparty_data")
+    }
     
   })
   
@@ -1260,6 +1274,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$view_3rdparty_data, ignoreInit = T,{
     w$show()
+  
   })
   
   # Render plot with selected data
@@ -1458,8 +1473,7 @@ server <- function(input, output, session) {
   
   observe({
     req(input$camera_ID)
-    
-    
+
     w2$show()
     
     output$camera <- renderImage({
