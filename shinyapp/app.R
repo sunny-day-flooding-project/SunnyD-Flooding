@@ -119,7 +119,7 @@ noaa_wl <- function(id, type, begin_date, end_date){
 
 #wl_id, wl_src, wl_types, wl_url
 
-get_local_wl <- function(wl_id, wl_src, type, begin_date, end_date) {
+get_local_wl <- function(wl_id, wl_src, type = c("obs"), begin_date, end_date) {
   # Each data source will have its own function called within this larger function
   switch(toupper(wl_src),
          "NOAA" = noaa_wl(id = wl_id,
@@ -678,6 +678,7 @@ server <- function(input, output, session) {
                 mutate(sensor_water_level = sensor_water_level_adj,
                        road_water_level = road_water_level_adj) %>% 
     mutate(date_lst = lubridate::with_tz(date, tzone = "America/New_York")) %>% 
+    filter(!is.na(lat) & !is.na(lng)) %>% 
     sf::st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
     mutate(
       html_popups = paste0( 
@@ -715,7 +716,6 @@ server <- function(input, output, session) {
   
   # Labels for sensor map 1 camera
   camera_locations_labels <- as.list(camera_locations$html_popups)
-  
   
   updateSelectInput(session = session,
                     inputId = "city_name",
@@ -818,22 +818,22 @@ server <- function(input, output, session) {
   })
   
   map_flood_status_reactive <- reactive({
-    # input$refresh_button
-    
+    input$refresh_button
+
     return(
-      data_for_display %>%
+      data_for_display %>% 
         group_by(sensor_ID) %>%
         slice_max(n = 3, order_by = date) %>%
         collect() %>%
         mutate(
-          sample_interval = lag(date) - date,
-          min_interval = min(sample_interval, na.rm = T),
+          sample_interval = difftime(lag(date),date, units = "mins"),
+          min_interval = as.numeric(min(sample_interval, na.rm = T)),
           current_time = Sys.time() %>% lubridate::with_tz(tzone = "UTC")
         ) %>%
         filter(date == max(date, na.rm = T)) %>%
         mutate(
           above_alert_wl = sensor_water_level_adj >= alert_threshold,
-          time_since_measurement = difftime(current_time,date, unit = "mins"),
+          time_since_measurement = as.numeric(floor(difftime(current_time,date, unit = "mins"))),
           time_since_measurement_text = time_converter(time_since_measurement),
           is_current = (time_since_measurement <= (min_interval + 6 + 6 + 3)),
           flood_status = ifelse(above_alert_wl & !is_current, "FLOODING", 
@@ -862,7 +862,7 @@ server <- function(input, output, session) {
         filter(date == max(date, na.rm = T)) %>%
         mutate(
           above_alert_wl = sensor_water_level_adj >= alert_threshold,
-          time_since_measurement = difftime(current_time,date, unit = "mins"),
+          time_since_measurement = floor(difftime(current_time,date, unit = "mins")),
           time_since_measurement_text = time_converter(time_since_measurement),
           is_current = (time_since_measurement <= (min_interval + 6 + 6 + 3)),
           flood_status = ifelse(above_alert_wl & !is_current, "FLOODING", 
@@ -914,7 +914,7 @@ server <- function(input, output, session) {
         )
     }
     
-    else if(lood_status_df$flood_status == "WARNING"){
+    else if(flood_status_df$flood_status == "WARNING"){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -932,7 +932,7 @@ server <- function(input, output, session) {
         )
       }
       
-      else if(lood_status_df$flood_status == "FLOODING"){
+      else if(flood_status_df$flood_status == "FLOODING"){
         updateBox(id = "flood_status",
                   action="update",
                   session = session,
@@ -961,7 +961,7 @@ server <- function(input, output, session) {
                              addTiles(group = "OSM") %>%
                              setView(lng = -77.360784, lat = 34.576053, zoom = 8) %>%
                              addCircleMarkers(data = sensor_locations %>% 
-                                                left_join(isolate(map_flood_status_reactive())), group = "sensor_site",
+                                                left_join(isolate(map_flood_status_reactive()), by = "sensor_ID"), group = "sensor_site",
                                               # popup = ~html_popups,
                                               label = lapply(sensor_locations_labels,HTML),
                                               labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
@@ -969,13 +969,11 @@ server <- function(input, output, session) {
                                               clusterId = "place",
                                               layerId = sensor_locations$sensor_ID,
                                               color = "black",
-                                              fillColor = switch(sensor_locations %>% 
-                                                                   left_join(isolate(map_flood_status_reactive())) %>% 
-                                                                   pull(flood_status),
-                                                                 "UNKNOWN" = "grey",
-                                                                 "FLOODING" = "#dc3545",
-                                                                 "WARNING" = "#ffc107",
-                                                                 "NOT FLOODING" = "#28a745"), 
+                                              fillColor = sensor_locations %>%
+                                                left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
+                                                left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
+                                                                 "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
+                                                pull(flood_color),
                                               fillOpacity = 1) %>% 
                              # leaflet::addLegend('bottomright', pal = pal_rev, values = c(-3.5,0.5),
                              #                    title = 'Water level<br>relative to<br>surface (ft)',
@@ -990,7 +988,7 @@ server <- function(input, output, session) {
                                baseGroups = c("Positron (default)", "Dark Matter","Imagery", "OSM"),
                                options = layersControlOptions(collapsed = T)) %>% 
                              addEasyButton(easyButton(
-                               icon="fa-globe", title="Zoom out",
+                               icon="fa-globe",title="Zoom out",
                                onClick=JS("function(btn, map){ map.setView({lng:-77.360784, lat:34.576053}, 8); }"),
                                position = "topright")) 
   )
@@ -1089,14 +1087,21 @@ server <- function(input, output, session) {
     if(input$map_layers == 1){
       leafletProxy(mapId = "m") %>% 
         clearGroup("camera_site") %>% 
-        addCircleMarkers(data = sensor_locations, group = "sensor_site",
+        addCircleMarkers(data = sensor_locations %>% 
+                           left_join(isolate(map_flood_status_reactive()), by = "sensor_ID"), group = "sensor_site",
                          # popup = ~html_popups,
                          label = lapply(sensor_locations_labels,HTML),
                          labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
                          clusterOptions = markerClusterOptions(),
                          clusterId = "place",
                          layerId = sensor_locations$sensor_ID,
-                         color = "black", fillColor = ~pal(road_water_level), fillOpacity = 1)
+                         color = "black",
+                         fillColor = sensor_locations %>%
+                           left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
+                           left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
+                                            "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
+                           pull(flood_color),
+                         fillOpacity = 1) 
     }
     
     if(input$map_layers == 2){
@@ -1107,7 +1112,7 @@ server <- function(input, output, session) {
                           labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
                           clusterOptions = markerClusterOptions(),
                           clusterId = "place",
-                          layerId = sensor_locations$sensor_ID,
+                          layerId = camera_locations$camera_ID,
         )
       
     }
@@ -1125,35 +1130,46 @@ server <- function(input, output, session) {
   
 
   observeEvent(input$m_marker_click,{
-    reactive_selection$overall_data_sensor <- input$m_marker_click
-    reactive_selection$overall_data_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
-    reactive_selection$overall_camera_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
-    
-    reactive_selection$overall_camera <- input$m_marker_click
 
-    if(input$map_layers == 1){ 
-      updateNavbarPage(session, 
+    if(input$map_layers == 1){
+      reactive_selection$overall_data_sensor <- input$m_marker_click
+      reactive_selection$overall_data_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
+      reactive_selection$overall_camera_location <- unique(sensor_locations$place[sensor_locations$sensor_ID == input$m_marker_click$id])
+
+      updateNavbarPage(session,
                        inputId = "nav",
                        selected = "Data")
     }
-    
-    if(input$map_layers == 2){ 
-      updateNavbarPage(session, 
+
+    if(input$map_layers == 2){
+        reactive_selection$overall_camera_location <- unique(camera_locations$place[camera_locations$camera_ID == input$m_marker_click$id])
+        reactive_selection$overall_camera <- input$m_marker_click
+        reactive_selection$overall_data_location <- unique(camera_locations$place[camera_locations$camera_ID == input$m_marker_click$id])
+        
+      
+      updateNavbarPage(session,
                        inputId = "nav",
                        selected = "Pictures")
     }
   })
   
   local_wl_metadata <- reactive({
-    req(input$data_location)
+    req(input$data_sensor)
+    
+    input$data_sensor
+
     sensor_surveys %>% 
-      filter(place == input$data_location,
-             date == max(date, na.rm=T)) %>% 
-      collect()
+      filter(sensor_ID == !!input$data_sensor) %>%
+      filter(date_surveyed == max(date_surveyed, na.rm=T)) %>% 
+      collect() %>% 
+      mutate(types = str_split(wl_types, pattern = ", "),
+             url = wl_url)
   })
   
   output$thirdparty_info <- renderUI({
-    helpText("  Data source: ",a(href=local_wl_metadata()$url,local_wl_metadata()$wl_src, target = "_blank", class = "pretty-link"))
+    wl_metadata_collected <- local_wl_metadata()
+    
+    helpText("  Data source: ",a(href=wl_metadata_collected$wl_url,wl_metadata_collected$wl_src, target = "_blank", class = "pretty-link"))
   })
   
   plot_missing_data_shading <- reactive({
@@ -1164,6 +1180,14 @@ server <- function(input, output, session) {
       return(datetime_to_timestamp(sensor_locations %>% filter(sensor_ID == input$data_sensor) %>% pull(date)))
     }
     else(return(NULL))
+  })
+  
+  observeEvent(input$data_sensor, {
+    
+    updateSwitchInput(session, 
+                      inputId = "view_3rdparty_data",
+                      value = F)
+    
   })
   
   
@@ -1215,16 +1239,22 @@ server <- function(input, output, session) {
   
   site_info <- reactive({
     req(input$data_sensor)
-    return(sensor_locations %>% 
-             filter(sensor_ID == input$data_sensor))
+    return(sensor_surveys %>% 
+             filter(sensor_ID == !!input$data_sensor) %>% 
+             filter(date_surveyed == max(date_surveyed, na.rm=T)) %>% 
+             collect())
   })
   
   output$site_notes <- renderUI({
-    p(strong("Site notes: "),site_info()$notes.x)
+    switch(site_info()$notes != "NA",
+           p(strong("Site notes: "),isolate(site_info())$notes),
+           "")
+    
+    # p(strong("Site notes: "),isolate(site_info())$notes)
   })
   
   output$site_description <- renderUI({
-    includeMarkdown(paste0("site_descriptions/",site_info()$sensor_ID,"/",site_info()$sensor_ID,".md"))
+    includeMarkdown(paste0("site_descriptions/",isolate(site_info())$sensor_ID,"/",isolate(site_info())$sensor_ID,".md"))
     
   })
   
