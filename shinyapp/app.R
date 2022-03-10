@@ -27,7 +27,7 @@ library(bs4Dash)
 
 
 # Source env variables if working on desktop
-source("/Users/adam/Documents/SunnyD/sunnyday_postgres_keys.R")
+# source("/Users/adam/Documents/SunnyD/sunnyday_postgres_keys.R")
 
 # HTML waiting screen for initial load
 waiting_screen <- tagList(
