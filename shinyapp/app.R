@@ -325,7 +325,7 @@ ui <- bs4Dash::dashboardPage(
           border: 3px;
         }
         
-        #camera img {max-width: 100%; width: 500px; height: auto}
+        #camera img {max-width: 100%; max-height: 400px}
         
         .input-group-text {
           background-color: #ffffff00!important;
@@ -1500,8 +1500,7 @@ server <- function(input, output, session) {
       
       # Return a list
       list(src = outfile,
-           alt = paste0("Latest picture from",input$camera_ID),
-           height = "100%")
+           alt = paste0("Latest picture from",input$camera_ID))
       
     }, deleteFile = T)
     
