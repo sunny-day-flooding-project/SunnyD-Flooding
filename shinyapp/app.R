@@ -24,6 +24,7 @@ library(httr)
 library(shinyWidgets)
 library(shinyjs)
 library(bs4Dash)
+library(foreach)
 
 
 # Source env variables if working on desktop
@@ -169,7 +170,8 @@ ui <- bs4Dash::dashboardPage(
       menuItem("Map", tabName = "Map", icon = icon("map")),
       menuItem("Data", tabName = "Data", icon = icon("database")),
       menuItem("Flood Cam", tabName = "Pictures", icon = icon("camera")),
-      menuItem("About", tabName = "About", icon = icon("info-circle"))
+      menuItem("About", tabName = "About", icon = icon("info-circle")),
+      menuItem("Sensors", tabName = "Sensors", icon = icon("microchip"),condition = "output.admin_login_status")
     )
   ),
   controlbar = bs4Dash::dashboardControlbar(
@@ -478,7 +480,10 @@ ui <- bs4Dash::dashboardPage(
                         includeMarkdown("about.md")
                     )
                 )
-        )
+        ),
+        tabItem(tabName = "Sensors",
+                uiOutput("dashboard_panels")
+                )
       )
     )
   ),
@@ -570,9 +575,15 @@ server <- function(input, output, session) {
   
   admin_login_status <- reactiveVal(value = F)
   
+  
   output$admin_status <- renderUI(
     span(p("Status: ",style="display:inline-block;font-weight: bold;"), p("Logged out", style="display:inline-block;")) 
   )
+  
+
+  output$admin_login_status <- reactive({admin_login_status()})
+
+  outputOptions(output, "admin_login_status", suspendWhenHidden = FALSE)
   
   observeEvent(input$admin_pswd_submit, {
     req(input$admin_pswd, admin_login_status() == F)
@@ -841,7 +852,7 @@ server <- function(input, output, session) {
                                        ifelse(!above_alert_wl & is_current, "NOT FLOODING",
                                               "UNKNOWN"))) 
         ) %>% 
-        dplyr::select(sensor_ID, flood_status)
+        dplyr::select(sensor_ID, time_since_measurement, time_since_measurement_text, flood_status)
     )
   })
   
@@ -1561,6 +1572,111 @@ server <- function(input, output, session) {
     #             })
     w2$hide()
   })
+  
+  observe({
+    print(camera_locations$date_lst)
+  })
+  
+#---------  Sensor dashboard panels -----------
+  output$dashboard_panels <- renderUI({
+    sensors <- sensor_locations %>% 
+      left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>% 
+      arrange(sensor_ID)
+    
+    cameras <- camera_locations %>% 
+      arrange(camera_ID) %>% 
+      mutate(
+        time_since_measurement = as.numeric(floor(difftime(Sys.time(),date_lst, unit = "mins"))),
+        time_since_measurement_text = purrr::map(.x = time_since_measurement, .f = time_converter)
+      )
+    
+    print(cameras$time_since_measurement)
+    
+    places <- c(sensors$place, cameras$place) %>% unique()
+    
+    n_places <- length(places)
+    
+    n_sensors <- nrow(sensors)
+    
+    n_cameras <- nrow(cameras)
+    
+    all_panels <- foreach(j = 1:n_places) %do% {
+      filtered_sensors <- sensors %>% 
+        filter(place == places[j])
+      
+      filtered_cameras <- cameras %>% 
+        filter(place == places[j])
+      
+      n_filtered_sensors <- nrow(filtered_sensors)
+      
+      n_filtered_cameras <- nrow(filtered_cameras)
+      
+      sensor_panels <- foreach(i = 1:n_filtered_sensors) %do% {
+        if(filtered_sensors$flood_status[i] == "NOT FLOODING"){
+          sensor_label <- boxLabel(text = "Good!", status = "success")
+        } 
+        if(filtered_sensors$flood_status[i] != "NOT FLOODING"){
+          sensor_label <- boxLabel(text = "Bad!", status = "danger")
+        }
+        
+        box(width = 12,
+            title = filtered_sensors$sensor_ID[i],
+            label = sensor_label,
+            status = "gray-dark",
+            solidHeader = T,
+            elevation = 1,
+            fluidRow(p("Last measurement: ", HTML(filtered_sensors$time_since_measurement_text[i]))),
+            fluidRow(p("Status: ", strong(filtered_sensors$flood_status[i])))
+            
+        )
+      }
+      
+      camera_panels <- foreach(i = 1:n_filtered_cameras) %do% {
+        if(filtered_cameras$time_since_measurement[i] < 10){
+          camera_label <- boxLabel(text = "Good!", status = "success")
+        } 
+        if(filtered_cameras$time_since_measurement[i] >= 10){
+          camera_label <- boxLabel(text = "Bad!", status = "danger")
+        }
+                               
+        
+        box(width = 12,
+            title = filtered_cameras$camera_ID[i],
+            status = "gray-dark",
+            solidHeader = T,
+            elevation = 1,
+            collapsible = F,
+            label = camera_label,
+            fluidRow(p("Last picture: ", HTML(unlist(filtered_cameras$time_since_measurement_text[i]))))
+        )
+      }
+      
+      box(title = places[j],
+          status = "secondary",
+          boxToolSize = "md",
+          solidHeader = T,
+          width=12,
+          fluidRow(box(title=strong("Sensors"),
+              width = 6,
+              fluidRow(sensor_panels),
+              headerBorder = F,
+              elevation = 0
+          ),
+          box(title=strong("Cameras"),
+              width = 6,
+              fluidRow(camera_panels),
+              headerBorder = F,
+              elevation = 0
+          )
+          )
+      )
+      
+    }
+    
+    all_panels
+    
+  })
+  
   waiter::waiter_hide()
 }
 
