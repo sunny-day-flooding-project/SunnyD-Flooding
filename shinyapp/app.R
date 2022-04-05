@@ -1715,26 +1715,20 @@ server <- function(input, output, session) {
             status = "gray-dark",
             solidHeader = T,
             elevation = 1,
-            box(width=12,
-                title = strong("Details"),
-                headerBorder = F,
-                elevation = 0,
-                collapsible = F,
-              fluidRow(p("Last measurement: ", HTML(filtered_sensors$time_since_measurement_text[i]))),
-              fluidRow(p("Status: ", strong(filtered_sensors$flood_status[i])))
+            div(class = "col-sm-12",
+                fluidRow(p(strong("Details"), style="font-size:20px")),
+                br(),
+                fluidRow(p("Last measurement: ", HTML(filtered_sensors$time_since_measurement_text[i]))),
+                fluidRow(p("Status: ", strong(filtered_sensors$flood_status[i])))
               ),
-            box(width=12,
-                title = strong("Status Table"),
-                headerBorder = F,
-                elevation = 0,
-                collapsible = F,
-              fluidRow(error_table_as_html)
+            hr(),
+            div(class = "col-sm-12",
+                fluidRow(p(strong("Status Table"), style="font-size:20px")),
+                fluidRow(error_table_as_html)
               ),
-            box(width=12,
-                title=strong("Battery Voltage"),
-                headerBorder = F,
-                elevation = 0,
-                collapsed = F,
+            hr(),
+            div(class = "col-sm-12",
+                fluidRow(p(strong("Battery Voltage"), style="font-size:20px")),
             
             highchart() %>%
               hc_chart(type = "solidgauge") %>%
