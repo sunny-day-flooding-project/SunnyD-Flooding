@@ -374,6 +374,10 @@ ui <- bs4Dash::dashboardPage(
         
         # Tab showing selected data and time series graphs
         tabItem(tabName = "Data",
+                
+                # Add a banner if a sensor site is "under construction"
+                uiOutput("construction_banner"),
+                
                 # Time series interactive plot or data table in separate tabs
                 box(width=12, 
                     id = "flood_status", 
@@ -1270,6 +1274,19 @@ server <- function(input, output, session) {
              collect())
   })
   
+  output$construction_banner <- renderUI({
+    if(site_info()$under_construction == T){
+      return(
+        box(title = p("🚧",strong("Site Under Construction"),"🚧"),
+            width=12,
+            status = "warning",
+            solidHeader = T,
+            collapsed = T,
+            p("Pardon our mess! We are working to get this sensor site up and running."))
+      )
+    }
+  })
+  
   output$site_notes <- renderUI({
     switch(site_info()$notes != "NA",
            p(strong("Site notes: "),isolate(site_info())$notes),
@@ -1573,15 +1590,19 @@ server <- function(input, output, session) {
     w2$hide()
   })
   
-  observe({
-    print(camera_locations$date_lst)
-  })
   
 #---------  Sensor dashboard panels -----------
   output$dashboard_panels <- renderUI({
     sensors <- sensor_locations %>% 
-      left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>% 
-      arrange(sensor_ID)
+      left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
+      arrange(sensor_ID) %>% 
+      left_join(con %>% 
+                  tbl("sensor_data") %>% 
+                  group_by(sensor_ID) %>% 
+                  slice_max(date, n=1) %>% 
+                  collect() %>% 
+                  dplyr::select(place, sensor_ID, voltage, processed, raw_data_date = date)
+                )
     
     cameras <- camera_locations %>% 
       arrange(camera_ID) %>% 
@@ -1590,8 +1611,7 @@ server <- function(input, output, session) {
         time_since_measurement_text = purrr::map(.x = time_since_measurement, .f = time_converter)
       )
     
-    print(cameras$time_since_measurement)
-    
+
     places <- c(sensors$place, cameras$place) %>% unique()
     
     n_places <- length(places)
@@ -1610,26 +1630,130 @@ server <- function(input, output, session) {
       n_filtered_sensors <- nrow(filtered_sensors)
       
       n_filtered_cameras <- nrow(filtered_cameras)
+
+      # sensor_panel_error_tables <- purrr::map(.x = 1:nrow(filtered_sensors), .f = function(x) {
+      #   
+      #   
+      #   matched_camera <- filtered_cameras %>% 
+      #     filter(str_remove(camera_ID, "CAM_") == filtered_sensors$sensor_ID[x])
+      #   
+      #   # print(matched_camera)
+      #   
+      #   no_data_error <- ifelse(filtered_sensors$raw_data_date[x] == filtered_sensors$date[x] & matched_camera$time_since_measurement < 10, T, F)
+      #   gateway_error <- ifelse(filtered_sensors$raw_data_date[x] == filtered_sensors$date[x] & matched_camera$time_since_measurement > 10, T, F)
+      #   processing_data_error <- ifelse(filtered_sensors$processed[x] == F, T, F)
+      #   
+      #   
+      #   no_data_error_icon <- ifelse(no_data_error,
+      #                                # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>',
+      #                                # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>')
+      #                                as.character(icon("check-circle",style="color:#28a745 !important")),
+      #                                as.character(icon("times-circle", style="color:#dc3545 !important")))
+      #   
+      #   gateway_error_icon <- ifelse(gateway_error,
+      #                                # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>',
+      #                                # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>')
+      #                                as.character(icon("check-circle",style="color:#28a745 !important")),
+      #                                as.character(icon("times-circle", style="color:#dc3545 !important")))
+      #   
+      #   processing_data_error_icon <- ifelse(processing_data_error,
+      #                                        # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>',
+      #                                        # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>')
+      #                                        as.character(icon("check-circle",style="color:#28a745 !important")),
+      #                                        as.character(icon("times-circle", style="color:#dc3545 !important")))
+      #   
+      #   id <- paste0("table_",filtered_sensors$sensor_ID[x])
+      #   
+      #   output[[id]] <- 
+      #   renderTable({
+      #     tibble(
+      #       "place" = filtered_sensors$place[x],
+      #       "sensor_ID" = filtered_sensors$sensor_ID[x],
+      #       # "sensor_label" = sensor_label,
+      #       "Error Status" = c("Sensor", "Gateway", "Processing"),
+      #       "Icons" = c(
+      #         no_data_error_icon,
+      #         gateway_error_icon,
+      #         processing_data_error_icon
+      #       ),
+      #       "values" = c(no_data_error, gateway_error, processing_data_error)
+      #     )
+      #   }, sanitize.text.function = function(x) x)
+      # }
+      # )
       
       sensor_panels <- foreach(i = 1:n_filtered_sensors) %do% {
         if(filtered_sensors$flood_status[i] == "NOT FLOODING"){
           sensor_label <- boxLabel(text = "Good!", status = "success")
-        } 
+        }
         if(filtered_sensors$flood_status[i] != "NOT FLOODING"){
           sensor_label <- boxLabel(text = "Bad!", status = "danger")
         }
         
+
+        matched_camera <- filtered_cameras %>%
+          filter(str_remove(camera_ID, "CAM_") == filtered_sensors$sensor_ID[i])
+
+        # print(matched_camera)
+
+        no_data_error <- ifelse(filtered_sensors$raw_data_date[i] == filtered_sensors$date[i] & matched_camera$time_since_measurement[i] < 10, T, F)
+        gateway_error <- ifelse(filtered_sensors$raw_data_date[i] == filtered_sensors$date[i] & matched_camera$time_since_measurement[i] > 10, T, F)
+        processing_data_error <- ifelse(filtered_sensors$processed[i] == F, T, F)
+
+
+        no_data_error_icon <- ifelse(no_data_error,
+                                     # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>',
+                                     # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>')
+                                     as.character(icon("check-circle",style="color:#28a745 !important")),
+                                     as.character(icon("times-circle", style="color:#dc3545 !important")))
+
+        gateway_error_icon <- ifelse(gateway_error,
+                                     # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>',
+                                     # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>')
+                                     as.character(icon("check-circle",style="color:#28a745 !important")),
+                                     as.character(icon("times-circle", style="color:#dc3545 !important")))
+
+        processing_data_error_icon <- ifelse(processing_data_error,
+                                     # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>',
+                                     # '<i class="fa fa-check-circle" role="presentation" aria-label="check-circle icon" style="color:#28a745"></i>')
+                                     as.character(icon("check-circle",style="color:#28a745 !important")),
+                                     as.character(icon("times-circle", style="color:#dc3545 !important")))
+
+        # print(no_data_error)
+        #
+        # print(no_data_error_icon)
+        #
+        # print(gateway_error)
+        #
+        # print(processing_data_error)
+
+        # gateway_error_icon
+        # processing_data_error_icon
+
+        error_table <- tibble("Error Status" = c("Sensor", "Gateway", "Processing"),
+                              "Icons" = c(no_data_error_icon, gateway_error_icon, processing_data_error_icon),
+                              "values" = c(no_data_error, gateway_error, processing_data_error))
+        
+        # print(map_dfr(sensor_panel_error_tables, bind_rows))
+        id <- paste0("table_",filtered_sensors$sensor_ID[i])
+        
+        # print(id)
+        # print(error_table)
+        
+        output[[id]] <- renderTable({error_table}, sanitize.text.function = function(x) x)
+
         box(width = 12,
             title = filtered_sensors$sensor_ID[i],
-            label = sensor_label,
+            label = sensor_label,            
             status = "gray-dark",
             solidHeader = T,
             elevation = 1,
             fluidRow(p("Last measurement: ", HTML(filtered_sensors$time_since_measurement_text[i]))),
-            fluidRow(p("Status: ", strong(filtered_sensors$flood_status[i])))
-            
+            fluidRow(p("Status: ", strong(filtered_sensors$flood_status[i]))),
+            br()
         )
       }
+
       
       camera_panels <- foreach(i = 1:n_filtered_cameras) %do% {
         if(filtered_cameras$time_since_measurement[i] < 10){
