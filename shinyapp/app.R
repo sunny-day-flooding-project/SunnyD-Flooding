@@ -1741,7 +1741,7 @@ server <- function(input, output, session) {
                   shape = "arc"
                 )
               ) %>%
-              hc_tooltip(enabled = F) %>% 
+              hc_tooltip(enabled = T) %>% 
               hc_yAxis(
                 stops = list_parse2(col_stops),
                 lineWidth = 0,
@@ -1760,7 +1760,7 @@ server <- function(input, output, session) {
                   style = list(fontSize = "30px")
                 )
               ) %>% 
-              hc_size(height = 150)
+              hc_size(height = 300)
             )
                      
             
