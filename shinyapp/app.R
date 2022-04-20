@@ -156,8 +156,8 @@ ui <- bs4Dash::dashboardPage(
   title = "Data Viewer", 
   header = bs4Dash::dashboardHeader(
     border = F,
-    .list = list(span(tags$img(src = "logo.svg", height = '50'))
-    )
+    .list = list(span(tags$a(tags$img(src = "logo.svg", height = '50'), href = "https://tarheels.live/sunnydayflood/", target="_blank")
+    ))
   ),
   sidebar = bs4Dash::dashboardSidebar(
     width = 400,
@@ -170,7 +170,14 @@ ui <- bs4Dash::dashboardPage(
       menuItem("Map", tabName = "Map", icon = icon("map")),
       menuItem("Data", tabName = "Data", icon = icon("database")),
       menuItem("Flood Cam", tabName = "Pictures", icon = icon("camera")),
-      menuItem("About", tabName = "About", icon = icon("info-circle")),
+      a(HTML('<li class="nav-item">
+    <a class="nav-link" href="https://tarheels.live/sunnydayflood/" target="_blank">
+      <i class="fas fa-external-link-alt nav-icon" role="presentation" aria-label="external-link-alt icon"></i>
+      <p>Website
+      <span class="right badge badge-success">Link</span></p>
+    </a>
+  </li>')),
+      # menuItem("Website", icon = icon("info-circle"), href = "https://tarheels.live/sunnydayflood/", newTab = T),
       menuItem("Sensors", tabName = "Sensors", icon = icon("microchip"),condition = "output.admin_login_status")
     )
   ),
@@ -200,13 +207,12 @@ ui <- bs4Dash::dashboardPage(
         size = 24,
         css = ""
       ),
-      useShinyalert(),
       useShinyjs(),
       extendShinyjs(text = jsCode, functions = c()),
       use_waiter(),
       waiter::waiter_show_on_load(html = spin_3k(),
                                   color = transparent(0)),
-      tags$head(tags$link(rel = "shortcut icon", href = "https://tarheels.live/sunnydayflood/wp-content/uploads/sites/1319/2021/02/sunny_d_icon-01-2.png"),
+      tags$head(tags$link(rel = "shortcut icon", href = "https://tarheels.live/sunnydayflood/wp-content/uploads/sites/1319/2022/04/cropped-SDFP_sun-only_v3-01.png"),
                 includeCSS("sunnyd-theme.css"),
                 tags$style(HTML('
         
@@ -247,7 +253,7 @@ ui <- bs4Dash::dashboardPage(
           color:white !important;
         }
         
-        .fa {
+        .fa, .fas {
           color:white !important;
         }
         
@@ -495,13 +501,6 @@ ui <- bs4Dash::dashboardPage(
                   
                 )
                 
-        ),
-        tabItem(tabName = "About",
-                div(class = "card",
-                    div(class = "card-body",
-                        includeMarkdown("about.md")
-                    )
-                )
         ),
         tabItem(tabName = "Sensors",
                 uiOutput("dashboard_panels")
