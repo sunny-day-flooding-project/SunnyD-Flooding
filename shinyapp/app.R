@@ -25,6 +25,7 @@ library(shinyWidgets)
 library(shinyjs)
 library(bs4Dash)
 library(foreach)
+library(xml2)
 
 
 # Source env variables if working on desktop
@@ -66,6 +67,8 @@ data_for_display <- con %>%
 sensor_surveys <- con %>% 
   tbl("sensor_surveys")
 
+fiman_gauge_key <- read_csv("fiman_gauge_key.csv")
+
 global <- getOption("highcharter.global")
 global$useUTC <- FALSE
 global$timezoneOffset <- -300
@@ -79,8 +82,8 @@ noaa_wl <- function(id, type, begin_date, end_date){
         url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
         query = list(
           "station" = id,
-          "begin_date" = begin_date,
-          "end_date" = end_date,
+          "begin_date" = begin_date %>% str_remove_all("-"),
+          "end_date" = end_date %>% str_remove_all("-"),
           "product" = ifelse(type == "obs","water_level","predictions"),
           "units" = "english",
           "datum" = "NAVD",
@@ -117,6 +120,48 @@ noaa_wl <- function(id, type, begin_date, end_date){
     return(wl)
   }
 
+fiman_wl <- function(id, begin_date, end_date){
+  station_keys <- fiman_gauge_key %>% 
+    filter(site_id == id) %>% 
+    filter(Sensor == "Water Elevation")
+  
+  request <- httr::GET(url = Sys.getenv("FIMAN_URL"),
+                       query = list(
+                         "site_id" = station_keys$site_id,
+                         "data_start" = paste0(format(begin_date, "%Y-%m-%d %H:%M:%S")),
+                         "date_end" = paste0(format(end_date, "%Y-%m-%d %H:%M:%S")),
+                         "format_datetime"="%Y-%m-%d %H:%M:%S",
+                         "tz" = "UTC",
+                         "show_raw" = T,
+                         "show_quality" = T,
+                         "sensor_id" =  station_keys$sensor_id
+                         
+                       ))
+  
+  content <- request$content %>% 
+    xml2::read_xml() %>% 
+    xml2::as_list() %>% 
+    as_tibble()
+  
+  parsed_content <- content$onerain$response %>% 
+    as_tibble() %>% 
+    unnest_wider("general") %>% 
+    unnest(cols = names(.)) %>% 
+    unnest(cols = names(.)) %>% 
+    mutate(data_time = lubridate::ymd_hms(data_time),
+           data_value = as.numeric(data_value))
+  
+  wl <- parsed_content %>%
+    transmute(
+      id = id,
+      date = data_time,
+      level = data_value,
+      entity = "FIMAN",
+      notes = "observation"
+    )
+  
+  return(wl)
+}
 
 #wl_id, wl_src, wl_types, wl_url
 
@@ -126,7 +171,10 @@ get_local_wl <- function(wl_id, wl_src, type = c("obs"), begin_date, end_date) {
          "NOAA" = noaa_wl(id = wl_id,
                           type = type,
                           begin_date = begin_date,
-                          end_date = end_date)
+                          end_date = end_date),
+         "FIMAN" = fiman_wl(id = wl_id,
+                            begin_date = begin_date,
+                            end_date = end_date)
   )
   
 }
@@ -1243,6 +1291,8 @@ server <- function(input, output, session) {
         abs(input$dateRange[2] - input$dateRange[1]) <=30,
         nrow(sensor_data()!=0))
     
+    w$show()
+    
     min_date = min(input$dateRange)
     max_date = max(input$dateRange)
     
@@ -1252,11 +1302,12 @@ server <- function(input, output, session) {
     plot_3rd_party_data_obs <<- get_local_wl(wl_id = isolate(local_wl_metadata())$wl_id,
                                              wl_src = isolate(local_wl_metadata())$wl_src,
                                              type = "obs",
-                                             begin_date = min_date %>% str_remove_all("-"),
-                                             end_date = max_date %>% str_remove_all("-")) %>%
+                                             begin_date = min_date,
+                                             end_date = max_date) %>%
       mutate(date = datetime_to_timestamp(date),
              road_water_level= level-plot_sensor_stats$road_elevation,
              sensor_water_level=level)
+    w$hide()
     
   })
   
@@ -1315,11 +1366,6 @@ server <- function(input, output, session) {
   output$site_description <- renderUI({
     includeMarkdown(paste0("site_descriptions/",isolate(site_info())$sensor_ID,"/",isolate(site_info())$sensor_ID,".md"))
     
-  })
-  
-  observeEvent(input$view_3rdparty_data, ignoreInit = T,{
-    w$show()
-  
   })
   
   # Render plot with selected data
