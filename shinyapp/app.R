@@ -26,6 +26,7 @@ library(shinyjs)
 library(bs4Dash)
 library(foreach)
 library(xml2)
+library(tidyverse)
 
 
 # Source env variables if working on desktop
