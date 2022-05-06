@@ -24,10 +24,13 @@ library(httr)
 library(shinyWidgets)
 library(shinyjs)
 library(bs4Dash)
+library(foreach)
+library(xml2)
+library(tidyverse)
 
 
 # Source env variables if working on desktop
-source("/Users/adam/Documents/SunnyD/sunnyday_postgres_keys.R")
+# source("/Users/adam/Documents/SunnyD/sunnyday_postgres_keys.R")
 
 # HTML waiting screen for initial load
 waiting_screen <- tagList(
@@ -65,6 +68,8 @@ data_for_display <- con %>%
 sensor_surveys <- con %>% 
   tbl("sensor_surveys")
 
+fiman_gauge_key <- read_csv("fiman_gauge_key.csv")
+
 global <- getOption("highcharter.global")
 global$useUTC <- FALSE
 global$timezoneOffset <- -300
@@ -78,8 +83,8 @@ noaa_wl <- function(id, type, begin_date, end_date){
         url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter/",
         query = list(
           "station" = id,
-          "begin_date" = begin_date,
-          "end_date" = end_date,
+          "begin_date" = begin_date %>% str_remove_all("-"),
+          "end_date" = end_date %>% str_remove_all("-"),
           "product" = ifelse(type == "obs","water_level","predictions"),
           "units" = "english",
           "datum" = "NAVD",
@@ -116,6 +121,48 @@ noaa_wl <- function(id, type, begin_date, end_date){
     return(wl)
   }
 
+fiman_wl <- function(id, begin_date, end_date){
+  station_keys <- fiman_gauge_key %>% 
+    filter(site_id == id) %>% 
+    filter(Sensor == "Water Elevation")
+  
+  request <- httr::GET(url = Sys.getenv("FIMAN_URL"),
+                       query = list(
+                         "site_id" = station_keys$site_id,
+                         "data_start" = paste0(format(begin_date, "%Y-%m-%d %H:%M:%S")),
+                         "date_end" = paste0(format(end_date, "%Y-%m-%d %H:%M:%S")),
+                         "format_datetime"="%Y-%m-%d %H:%M:%S",
+                         "tz" = "UTC",
+                         "show_raw" = T,
+                         "show_quality" = T,
+                         "sensor_id" =  station_keys$sensor_id
+                         
+                       ))
+  
+  content <- request$content %>% 
+    xml2::read_xml() %>% 
+    xml2::as_list() %>% 
+    as_tibble()
+  
+  parsed_content <- content$onerain$response %>% 
+    as_tibble() %>% 
+    unnest_wider("general") %>% 
+    unnest(cols = names(.)) %>% 
+    unnest(cols = names(.)) %>% 
+    mutate(data_time = lubridate::ymd_hms(data_time),
+           data_value = as.numeric(data_value))
+  
+  wl <- parsed_content %>%
+    transmute(
+      id = id,
+      date = data_time,
+      level = data_value,
+      entity = "FIMAN",
+      notes = "observation"
+    )
+  
+  return(wl)
+}
 
 #wl_id, wl_src, wl_types, wl_url
 
@@ -125,7 +172,10 @@ get_local_wl <- function(wl_id, wl_src, type = c("obs"), begin_date, end_date) {
          "NOAA" = noaa_wl(id = wl_id,
                           type = type,
                           begin_date = begin_date,
-                          end_date = end_date)
+                          end_date = end_date),
+         "FIMAN" = fiman_wl(id = wl_id,
+                            begin_date = begin_date,
+                            end_date = end_date)
   )
   
 }
@@ -155,8 +205,8 @@ ui <- bs4Dash::dashboardPage(
   title = "Data Viewer", 
   header = bs4Dash::dashboardHeader(
     border = F,
-    .list = list(span(tags$img(src = "logo.svg", height = '50'))
-    )
+    .list = list(span(tags$a(tags$img(src = "logo.svg", height = '50'), href = "https://tarheels.live/sunnydayflood/", target="_blank")
+    ))
   ),
   sidebar = bs4Dash::dashboardSidebar(
     width = 400,
@@ -169,7 +219,15 @@ ui <- bs4Dash::dashboardPage(
       menuItem("Map", tabName = "Map", icon = icon("map")),
       menuItem("Data", tabName = "Data", icon = icon("database")),
       menuItem("Flood Cam", tabName = "Pictures", icon = icon("camera")),
-      menuItem("About", tabName = "About", icon = icon("info-circle"))
+      a(HTML('<li class="nav-item">
+    <a class="nav-link" href="https://tarheels.live/sunnydayflood/" target="_blank">
+      <i class="fas fa-external-link-alt nav-icon" role="presentation" aria-label="external-link-alt icon"></i>
+      <p>Website
+      <span class="right badge badge-success">Link</span></p>
+    </a>
+  </li>')),
+      # menuItem("Website", icon = icon("info-circle"), href = "https://tarheels.live/sunnydayflood/", newTab = T),
+      menuItem("Sensors", tabName = "Sensors", icon = icon("microchip"),condition = "output.admin_login_status")
     )
   ),
   controlbar = bs4Dash::dashboardControlbar(
@@ -198,13 +256,12 @@ ui <- bs4Dash::dashboardPage(
         size = 24,
         css = ""
       ),
-      useShinyalert(),
       useShinyjs(),
       extendShinyjs(text = jsCode, functions = c()),
       use_waiter(),
       waiter::waiter_show_on_load(html = spin_3k(),
                                   color = transparent(0)),
-      tags$head(tags$link(rel = "shortcut icon", href = "https://tarheels.live/sunnydayflood/wp-content/uploads/sites/1319/2021/02/sunny_d_icon-01-2.png"),
+      tags$head(tags$link(rel = "shortcut icon", href = "https://tarheels.live/sunnydayflood/wp-content/uploads/sites/1319/2022/04/cropped-SDFP_sun-only_v3-01.png"),
                 includeCSS("sunnyd-theme.css"),
                 tags$style(HTML('
         
@@ -245,10 +302,28 @@ ui <- bs4Dash::dashboardPage(
           color:white !important;
         }
         
-        .fa {
+        .fa, .fas {
           color:white !important;
         }
         
+        th, td {
+          padding: 7px;
+        }
+        
+        td {
+          text-align: center;
+          vertical-align: middle;
+        }
+
+        tr {
+          border-bottom: 1px solid #ddd;
+        }
+        
+        .center {
+          margin-left: auto;
+          margin-right: auto;
+        }
+
         #downloadData {
           background-color:#13294b;
           color:white !important;
@@ -325,7 +400,7 @@ ui <- bs4Dash::dashboardPage(
           border: 3px;
         }
         
-        #camera img {max-width: 100%; width: 500px; height: auto}
+        #camera img {max-width: 100%; max-height: 400px}
         
         .input-group-text {
           background-color: #ffffff00!important;
@@ -372,6 +447,10 @@ ui <- bs4Dash::dashboardPage(
         
         # Tab showing selected data and time series graphs
         tabItem(tabName = "Data",
+                
+                # Add a banner if a sensor site is "under construction"
+                uiOutput("construction_banner"),
+                
                 # Time series interactive plot or data table in separate tabs
                 box(width=12, 
                     id = "flood_status", 
@@ -472,13 +551,9 @@ ui <- bs4Dash::dashboardPage(
                 )
                 
         ),
-        tabItem(tabName = "About",
-                div(class = "card",
-                    div(class = "card-body",
-                        includeMarkdown("about.md")
-                    )
+        tabItem(tabName = "Sensors",
+                uiOutput("dashboard_panels")
                 )
-        )
       )
     )
   ),
@@ -570,9 +645,15 @@ server <- function(input, output, session) {
   
   admin_login_status <- reactiveVal(value = F)
   
+  
   output$admin_status <- renderUI(
     span(p("Status: ",style="display:inline-block;font-weight: bold;"), p("Logged out", style="display:inline-block;")) 
   )
+  
+
+  output$admin_login_status <- reactive({admin_login_status()})
+
+  outputOptions(output, "admin_login_status", suspendWhenHidden = FALSE)
   
   observeEvent(input$admin_pswd_submit, {
     req(input$admin_pswd, admin_login_status() == F)
@@ -841,7 +922,7 @@ server <- function(input, output, session) {
                                        ifelse(!above_alert_wl & is_current, "NOT FLOODING",
                                               "UNKNOWN"))) 
         ) %>% 
-        dplyr::select(sensor_ID, flood_status)
+        dplyr::select(sensor_ID, time_since_measurement, time_since_measurement_text, flood_status)
     )
   })
   
@@ -1211,6 +1292,8 @@ server <- function(input, output, session) {
         abs(input$dateRange[2] - input$dateRange[1]) <=30,
         nrow(sensor_data()!=0))
     
+    w$show()
+    
     min_date = min(input$dateRange)
     max_date = max(input$dateRange)
     
@@ -1220,11 +1303,12 @@ server <- function(input, output, session) {
     plot_3rd_party_data_obs <<- get_local_wl(wl_id = isolate(local_wl_metadata())$wl_id,
                                              wl_src = isolate(local_wl_metadata())$wl_src,
                                              type = "obs",
-                                             begin_date = min_date %>% str_remove_all("-"),
-                                             end_date = max_date %>% str_remove_all("-")) %>%
+                                             begin_date = min_date,
+                                             end_date = max_date) %>%
       mutate(date = datetime_to_timestamp(date),
              road_water_level= level-plot_sensor_stats$road_elevation,
              sensor_water_level=level)
+    w$hide()
     
   })
   
@@ -1259,6 +1343,19 @@ server <- function(input, output, session) {
              collect())
   })
   
+  output$construction_banner <- renderUI({
+    if(site_info()$under_construction == T){
+      return(
+        box(title = p("🚧",strong("Site Under Construction"),"🚧"),
+            width=12,
+            status = "warning",
+            solidHeader = T,
+            collapsed = T,
+            p("Pardon our mess! We are working to get this sensor site up and running."))
+      )
+    }
+  })
+  
   output$site_notes <- renderUI({
     switch(site_info()$notes != "NA",
            p(strong("Site notes: "),isolate(site_info())$notes),
@@ -1270,11 +1367,6 @@ server <- function(input, output, session) {
   output$site_description <- renderUI({
     includeMarkdown(paste0("site_descriptions/",isolate(site_info())$sensor_ID,"/",isolate(site_info())$sensor_ID,".md"))
     
-  })
-  
-  observeEvent(input$view_3rdparty_data, ignoreInit = T,{
-    w$show()
-  
   })
   
   # Render plot with selected data
@@ -1500,8 +1592,7 @@ server <- function(input, output, session) {
       
       # Return a list
       list(src = outfile,
-           alt = paste0("Latest picture from",input$camera_ID),
-           height = "100%")
+           alt = paste0("Latest picture from",input$camera_ID))
       
     }, deleteFile = T)
     
@@ -1562,6 +1653,213 @@ server <- function(input, output, session) {
     #             })
     w2$hide()
   })
+  
+  
+#---------  Sensor dashboard panels -----------
+  output$dashboard_panels <- renderUI({
+    sensors <- sensor_locations %>% 
+      left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
+      arrange(sensor_ID) %>% 
+      left_join(con %>% 
+                  tbl("sensor_data") %>% 
+                  group_by(sensor_ID) %>% 
+                  slice_max(date, n=1) %>% 
+                  collect() %>% 
+                  dplyr::select(place, sensor_ID, voltage, processed, raw_data_date = date)
+                )
+    
+    cameras <- camera_locations %>% 
+      arrange(camera_ID) %>% 
+      mutate(
+        time_since_measurement = as.numeric(floor(difftime(Sys.time(),date_lst, unit = "mins"))),
+        time_since_measurement_text = purrr::map(.x = time_since_measurement, .f = time_converter)
+      )
+    
+
+    places <- c(sensors$place, cameras$place) %>% unique()
+    
+    n_places <- length(places)
+    
+    n_sensors <- nrow(sensors)
+    
+    n_cameras <- nrow(cameras)
+    
+    all_panels <- foreach(j = 1:n_places) %do% {
+      filtered_sensors <- sensors %>% 
+        filter(place == places[j])
+      
+      filtered_cameras <- cameras %>% 
+        filter(place == places[j])
+      
+      n_filtered_sensors <- nrow(filtered_sensors)
+      
+      n_filtered_cameras <- nrow(filtered_cameras)
+
+      sensor_panels <- foreach(i = 1:n_filtered_sensors) %do% {
+        if(filtered_sensors$flood_status[i] == "NOT FLOODING"){
+          sensor_label <- boxLabel(text = "Good!", status = "success")
+        }
+        if(filtered_sensors$flood_status[i] != "NOT FLOODING"){
+          sensor_label <- boxLabel(text = "Bad!", status = "danger")
+        }
+        
+        matched_camera <- filtered_cameras %>%
+          filter(str_remove(camera_ID, "CAM_") == filtered_sensors$sensor_ID[i])
+
+        no_data_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$raw_data_date[i] == filtered_sensors$date[i] & matched_camera$time_since_measurement[i] < 10, T, F)
+        gateway_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$raw_data_date[i] == filtered_sensors$date[i] & matched_camera$time_since_measurement[i] > 10, T, F)
+        processing_data_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$processed[i] == F, T, F)
+
+        no_data_error_icon <- ifelse(no_data_error,
+                                     as.character(icon("times-circle", style="color:#dc3545 !important")),
+                                     as.character(icon("check-circle",style="color:#28a745 !important")))
+
+        gateway_error_icon <- ifelse(gateway_error,
+                                     as.character(icon("times-circle", style="color:#dc3545 !important")),
+                                     as.character(icon("check-circle",style="color:#28a745 !important")))
+
+        processing_data_error_icon <- ifelse(processing_data_error,
+                                      as.character(icon("times-circle", style="color:#dc3545 !important")),
+                                      as.character(icon("check-circle",style="color:#28a745 !important")))
+
+        error_table <- tibble("Error Status" = c("Sensor", "Gateway", "Processing"),
+                              "Icons" = c(no_data_error_icon, gateway_error_icon, processing_data_error_icon),
+                              "values" = c(no_data_error, gateway_error, processing_data_error))
+        
+        error_table_as_html <- HTML(paste0('
+                                    <table class = "center">
+                                      <tr>
+                                        <th>  </th>
+                                        <th> Status </th>
+                                      </tr>
+                                      <tr>
+                                        <td> Sensor </td>
+                                        <td>', error_table[1,2],'</td>
+                                      </tr>
+                                      <tr>
+                                        <td> Gateway </td>
+                                        <td>', error_table[2,2],'</td>
+                                      </tr>
+                                      <tr>
+                                        <td> Processing </td>
+                                        <td>', error_table[3,2],'</td>
+                                      </tr>
+                                    </table>'
+                                      )
+        )
+        
+        col_stops <- data.frame(
+          q = c(3.6, 3.4, 3.3),
+          c = c('#55BF3B', '#DDDF0D', '#DF5353'),
+          stringsAsFactors = FALSE
+        )
+
+        
+        box(width = 12,
+            title = filtered_sensors$sensor_ID[i],
+            label = sensor_label,            
+            status = "gray-dark",
+            solidHeader = T,
+            elevation = 1,
+            div(class = "col-sm-12",
+                fluidRow(p(strong("Details"), style="font-size:20px")),
+                br(),
+                fluidRow(p("Last measurement: ", HTML(filtered_sensors$time_since_measurement_text[i]))),
+                fluidRow(p("Status: ", strong(filtered_sensors$flood_status[i])))
+              ),
+            hr(),
+            div(class = "col-sm-12",
+                fluidRow(p(strong("Status Table"), style="font-size:20px")),
+                fluidRow(error_table_as_html)
+              ),
+            hr(),
+            div(class = "col-sm-12",
+                fluidRow(p(strong("Battery Voltage"), style="font-size:20px")),
+            
+            highchart() %>%
+              hc_chart(type = "solidgauge") %>%
+              hc_pane(
+                startAngle = -90,
+                endAngle = 90,
+                background = list(
+                  outerRadius = '100%',
+                  innerRadius = '60%',
+                  shape = "arc"
+                )
+              ) %>%
+              hc_tooltip(enabled = T) %>% 
+              hc_yAxis(
+                stops = list_parse2(col_stops),
+                lineWidth = 0,
+                minorTickWidth = .25,
+                tickAmount = .25,
+                min = 3.2,
+                max = 5.4,
+                labels = list(y = 26, style = list(fontSize = "16px"))
+              ) %>%
+              hc_add_series(
+                data = filtered_sensors$voltage[i],
+                dataLabels = list(
+                  y = 50,
+                  borderWidth = 0,
+                  useHTML = TRUE,
+                  style = list(fontSize = "30px")
+                )
+              ) %>% 
+              hc_size(height = 300)
+            )
+                     
+            
+        )
+      }
+
+      
+      camera_panels <- foreach(i = 1:n_filtered_cameras) %do% {
+        if(filtered_cameras$time_since_measurement[i] < 10){
+          camera_label <- boxLabel(text = "Good!", status = "success")
+        } 
+        if(filtered_cameras$time_since_measurement[i] >= 10){
+          camera_label <- boxLabel(text = "Bad!", status = "danger")
+        }
+                               
+        
+        box(width = 12,
+            title = filtered_cameras$camera_ID[i],
+            status = "gray-dark",
+            solidHeader = T,
+            elevation = 1,
+            collapsible = F,
+            label = camera_label,
+            fluidRow(p("Last picture: ", HTML(unlist(filtered_cameras$time_since_measurement_text[i]))))
+        )
+      }
+      
+      box(title = places[j],
+          status = "secondary",
+          boxToolSize = "md",
+          solidHeader = T,
+          width=12,
+          fluidRow(box(title=strong("Sensors"),
+              width = 6,
+              fluidRow(sensor_panels),
+              headerBorder = F,
+              elevation = 0
+          ),
+          box(title=strong("Cameras"),
+              width = 6,
+              fluidRow(camera_panels),
+              headerBorder = F,
+              elevation = 0
+          )
+          )
+      )
+      
+    }
+    
+    all_panels
+    
+  })
+  
   waiter::waiter_hide()
 }
 

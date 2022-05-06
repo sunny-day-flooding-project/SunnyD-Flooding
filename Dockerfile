@@ -27,7 +27,7 @@ RUN apt-get update && \
     apt-get clean
 
 # install packages
-RUN install2.r dplyr lubridate bs4Dash colourvalues waiter sf leaflet DT htmltools RColorBrewer highcharter xts shinyalert RPostgres DBI pool dbplyr magick stringr shinydisconnect tippy httr shinyWidgets shinyjs
+RUN install2.r dplyr lubridate bs4Dash colourvalues waiter sf leaflet DT htmltools RColorBrewer highcharter xts shinyalert RPostgres DBI pool dbplyr magick stringr shinydisconnect tippy httr shinyWidgets shinyjs foreach xml2 tidyverse
 
 # expose ports
 EXPOSE 3838
