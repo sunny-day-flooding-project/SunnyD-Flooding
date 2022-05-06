@@ -469,6 +469,8 @@ ui <- bs4Dash::dashboardPage(
                     p(strong("UNKNOWN:"), " Water level within this storm drain is unknown because the sensor has not reported water level recently.", align = "left",style="margin-bottom:0px;")
                 ),
                 
+                
+                
                 tabBox(width=12,
                        id = "data_tabs",
                        type = "tabs",
@@ -1427,12 +1429,23 @@ server <- function(input, output, session) {
                       hcaes(x=date,
                             y = wl),
                       type="line",
-                      name="Water Level",
+                      name="Water Level (grey dash = no water)",
                       color="#1d1d75",
                       # Controls when points are shown on plot (only on zoom)
                       marker = list(
                         enabledThreshold = 0.25
-                      )) %>%
+                      ),
+                      zones = list(
+                        list(
+                        value = sensor_elevation_limit + 0.05,
+                        color = '#A0A0A0',
+                        dashStyle = "shortdash"
+                        ),
+                        list(
+                          color = '#1d1d75'
+                        )
+                      )
+                      )%>%
         hc_chart(zoomType= "x",
                  backgroundColor = "#FFF"
         )%>%
@@ -1481,7 +1494,6 @@ server <- function(input, output, session) {
                                                     style = list( color = 'black', fontWeight = 'bold'))))) %>%
         hc_yAxis(max = y_axis_max,
                  title = list(text = "Water Level (ft)"),
-                 # min = y_axis_range[1],
                  plotLines = list(
                    list(value =road_elevation_limit,
                         dashStyle = "longdash",
@@ -1493,8 +1505,8 @@ server <- function(input, output, session) {
                    list(value = sensor_elevation_limit,
                         dashStyle = "longdash",
                         color="black",
-                        width = 1,
-                        zIndex = 4,
+                        width = 1,#6
+                        zIndex = 1,
                         label = list(text = "Sensor Elevation",
                                      style = list( color = 'black', fontWeight = 'bold'))))) %>%
         hc_exporting(enabled = TRUE,
