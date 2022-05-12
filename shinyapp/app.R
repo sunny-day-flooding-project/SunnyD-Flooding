@@ -1437,16 +1437,16 @@ server <- function(input, output, session) {
                       marker = list(
                         enabledThreshold = 0.25
                       ),
-                      zones = list(
-                        list(
-                        value = sensor_elevation_limit + 0.05,
-                        color = '#A0A0A0',
-                        dashStyle = "shortdash"
-                        ),
-                        list(
-                          color = '#1d1d75'
-                        )
-                      )
+                      # zones = list(
+                      #   list(
+                      #   value = sensor_elevation_limit + 0.05,
+                      #   color = '#A0A0A0',
+                      #   dashStyle = "shortdash"
+                      #   ),
+                      #   list(
+                      #     color = '#1d1d75'
+                      #   )
+                      # )
                       )%>%
         hc_chart(zoomType= "x",
                  backgroundColor = "#FFF"
