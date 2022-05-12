@@ -918,8 +918,9 @@ server <- function(input, output, session) {
           above_alert_wl = sensor_water_level_adj >= alert_threshold,
           time_since_measurement = as.numeric(floor(difftime(current_time,date, unit = "mins"))),
           time_since_measurement_text = time_converter(time_since_measurement),
-          is_current = (time_since_measurement <= (min_interval + 6 + 6 + 3)),
-          flood_status = ifelse(above_alert_wl & !is_current, "FLOODING", 
+          is_comms_down = time_since_measurement >= 180,
+          is_current = (time_since_measurement <= 40), #(min_interval + 10 + 10 + 3)
+          flood_status = ifelse(above_alert_wl & !is_current & !is_comms_down, "FLOODING", 
                                 ifelse(above_alert_wl & is_current, "WARNING", 
                                        ifelse(!above_alert_wl & is_current, "NOT FLOODING",
                                               "UNKNOWN"))) 
@@ -947,8 +948,9 @@ server <- function(input, output, session) {
           above_alert_wl = sensor_water_level_adj >= alert_threshold,
           time_since_measurement = floor(difftime(current_time,date, unit = "mins")),
           time_since_measurement_text = time_converter(time_since_measurement),
-          is_current = (time_since_measurement <= (min_interval + 6 + 6 + 3)),
-          flood_status = ifelse(above_alert_wl & !is_current, "FLOODING", 
+          is_comms_down = time_since_measurement >= 180,
+          is_current = (time_since_measurement <= 40), #(min_interval + 10 + 10 + 3)
+          flood_status = ifelse(above_alert_wl & !is_current & !is_comms_down, "FLOODING", 
                                 ifelse(above_alert_wl & is_current, "WARNING", 
                                        ifelse(!above_alert_wl & is_current, "NOT FLOODING",
                                               "UNKNOWN")))
