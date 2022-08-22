@@ -879,7 +879,7 @@ server <- function(input, output, session) {
       paste0(input$data_sensor, "_",format(reactive_min_date(),"%Y%m%d"), "_",format(reactive_max_date(), "%Y%m%d"), ".csv")
     },
     content = function(file) {
-      write.csv(sensor_data(), file)
+      write.csv(sensor_data() |> arrange(date), file)
     }
   )
   
