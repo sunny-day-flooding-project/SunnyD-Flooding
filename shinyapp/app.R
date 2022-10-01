@@ -1058,7 +1058,6 @@ server <- function(input, output, session) {
                                                 left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
                                                                  "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
                                                 pull(flood_color),
-                                              ,
                                               clusterOptions = markerClusterOptions(iconCreateFunction=JS("function (cluster) {    
                                                 var markers = cluster.getAllChildMarkers();
                                                 var childCount = cluster.getChildCount();
@@ -1082,7 +1081,7 @@ server <- function(input, output, session) {
                                                   }
                                                 }
                                                 return new L.DivIcon({ html: '<div style=\"background-color:'+c+'\"><span>' + childCount + '</span></div>', className: 'marker-cluster', iconSize: new L.Point(40, 40)});
-                                              }"))
+                                              }")),
                                               fillOpacity = 1) %>% 
                              # leaflet::addLegend('bottomright', pal = pal_rev, values = c(-3.5,0.5),
                              #                    title = 'Water level<br>relative to<br>surface (ft)',
