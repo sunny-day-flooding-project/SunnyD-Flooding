@@ -1050,7 +1050,30 @@ server <- function(input, output, session) {
                                               # popup = ~html_popups,
                                               label = lapply(sensor_locations_labels,HTML),
                                               labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
-                                              clusterOptions = markerClusterOptions(),
+                                              clusterOptions = markerClusterOptions(iconCreateFunction=JS("function (cluster) {    
+                                                var markers = cluster.getAllChildMarkers();
+                                                var childCount = cluster.getChildCount();
+                                                var p = 0; 
+                                                for (i = 0; i < markers.length; i++) {
+                                                  if(markers[i].options.col === '#dc3545'){ # look first for a red marker
+                                                    c = '#dc3545';
+                                                    break;
+                                                  }
+                                                  else if(markers[i].options.col === '#ffc107'){ # look next for yellow
+                                                    c = '#ffc107';
+                                                    break;
+                                                  }
+                                                  else if(markers[i].options.col === '#28a745'){ # look next for green
+                                                    c = '#28a745';
+                                                    break;
+                                                  }
+                                                  else(markers[i].options.col === 'grey'){ # if all are grey, use grey
+                                                    c = 'grey';
+                                                    break;
+                                                  }
+                                                }
+                                                return new L.DivIcon({ html: '<div style=\"background-color:'+c+'\"><span>' + childCount + '</span></div>', className: 'marker-cluster', iconSize: new L.Point(40, 40)});
+                                              }")),
                                               clusterId = "place",
                                               layerId = sensor_locations$sensor_ID,
                                               color = "black",
