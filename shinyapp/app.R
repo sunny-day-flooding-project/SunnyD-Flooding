@@ -429,7 +429,7 @@ ui <- bs4Dash::dashboardPage(
                                  ),
                                  radioButtons("map_layers", label = h4("Map Layers"),
                                               choices = list("Water Level Sensors" = 1, "Flood Cams" = 2), 
-                                              selected = 1)
+                                              selected = 2)
                              )
                          )
                   ),
