@@ -511,10 +511,10 @@ ui <- bs4Dash::dashboardPage(
                            )
                          )
                        ),
-                       tabPanel(
-                         "Site Info",
-                         uiOutput(outputId = "site_description")
-                       ),
+                      #  tabPanel(
+                      #    "Site Info",
+                      #    uiOutput(outputId = "site_description")
+                      #  ),
                        tabPanel(
                          "Download",
                          h3("Click the button below to download the selected data.", align="center"),
@@ -1045,21 +1045,34 @@ server <- function(input, output, session) {
                              addProviderTiles(group = "Imagery",provider = providers$Esri.WorldImagery) %>%
                              addTiles(group = "OSM") %>%
                              setView(lng = -77.360784, lat = 34.576053, zoom = 8) %>%
-                             addCircleMarkers(data = sensor_locations %>% 
-                                                left_join(isolate(map_flood_status_reactive()), by = "sensor_ID"), group = "sensor_site",
-                                              # popup = ~html_popups,
-                                              label = lapply(sensor_locations_labels,HTML),
-                                              labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
-                                              # clusterOptions = markerClusterOptions(),
-                                              # clusterId = "place",
-                                              layerId = sensor_locations$sensor_ID,
-                                              color = "black",
-                                              fillColor = sensor_locations %>%
-                                                left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
-                                                left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
-                                                                 "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
-                                                pull(flood_color),
-                                              fillOpacity = 1) %>% 
+                            #  addCircleMarkers(data = sensor_locations %>% 
+                            #                     left_join(isolate(map_flood_status_reactive()), by = "sensor_ID"), group = "sensor_site",
+                            #                   # popup = ~html_popups,
+                            #                   label = lapply(sensor_locations_labels,HTML),
+                            #                   labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
+                            #                   # clusterOptions = markerClusterOptions(),
+                            #                   # clusterId = "place",
+                            #                   layerId = sensor_locations$sensor_ID,
+                            #                   color = "black",
+                            #                   fillColor = sensor_locations %>%
+                            #                     left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
+                            #                     left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
+                            #                                      "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
+                            #                     pull(flood_color),
+                            #                   fillOpacity = 1) %>% 
+                            addCircleMarkers(data = camera_locations,
+                                group = "camera_site",
+                                label = lapply(camera_locations_labels,HTML),
+                                labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
+                                layerId = camera_locations$camera_ID,
+                                color = "black",
+                                fillColor = sensor_locations %>%
+                                  left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
+                                  left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
+                                                    "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
+                                  pull(flood_color),
+                                fillOpacity = 1.0
+                            ) %>%
                              # leaflet::addLegend('bottomright', pal = pal_rev, values = c(-3.5,0.5),
                              #                    title = 'Water level<br>relative to<br>surface (ft)',
                              #                    opacity = 1,
@@ -1192,13 +1205,26 @@ server <- function(input, output, session) {
     if(input$map_layers == 2){
       leafletProxy(mapId = "m") %>% 
         clearGroup("sensor_site") %>% 
-        addAwesomeMarkers(data = camera_locations, icon=map_icon, group = "camera_site",
-                          label = lapply(camera_locations_labels,HTML),
-                          labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
-                          # clusterOptions = markerClusterOptions(),
-                          # clusterId = "place",
-                          layerId = camera_locations$camera_ID,
-        )
+        # addAwesomeMarkers(data = camera_locations, icon=map_icon, group = "camera_site",
+        #                   label = lapply(camera_locations_labels,HTML),
+        #                   labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
+        #                   # clusterOptions = markerClusterOptions(),
+        #                   # clusterId = "place",
+        #                   layerId = camera_locations$camera_ID,
+        # )
+        addCircleMarkers(data = camera_locations,
+                           group = "camera_site",
+                         label = lapply(camera_locations_labels,HTML),
+                         labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
+                         layerId = camera_locations$camera_ID,
+                         color = "black",
+                         fillColor = sensor_locations %>%
+                           left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
+                           left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
+                                            "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
+                           pull(flood_color),
+                         fillOpacity = 1.0
+        ) 
       
     }
   })
