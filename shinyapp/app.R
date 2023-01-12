@@ -561,7 +561,7 @@ ui <- bs4Dash::dashboardPage(
   ),
   footer = dashboardFooter(
     left = p(em(strong("Disclaimer: "), "Data are preliminary and for informational use only.")),
-    right = "Copyright 2022 Sunny Day Flooding"
+    right =  paste("Copyright", format(Sys.Date(), "%Y"), "Sunny Day Flooding", sep=" ")
   )
 )
 
