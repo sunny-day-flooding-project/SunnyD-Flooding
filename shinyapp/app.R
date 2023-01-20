@@ -527,31 +527,41 @@ ui <- bs4Dash::dashboardPage(
                 
         ),
         tabItem(tabName = "Pictures",
-                tabBox(
-                  collapsible = F,
-                  type = "tabs",
-                  tabPanel(
-                    "Pictures",
-                    imageOutput(outputId = "camera"),
-                    uiOutput("firstCameraSelection", align = "center"),
-                    uiOutput("secondCameraSelection", align = "center")
-                  ),
-                  # column(6,
-                  #        h1("Water detected?",tippy(icon("info-circle",style="font-size:16px"), tooltip = div(h5("We are using machine learning to detect water on the road surface using our flood cams.",br(),br(),"The model used here is trained to distinguish pictures that have water in them from those that do not. Cars, salt water stains, sun glare, and other features in the photos can decrease the accuracy of the model.",br(),br(),"This model is still in development and is for informational purposes only."), style = "text-align:left"))),
-                  #        div(p("In Development",style="color:white;text-align: center"),style="background-color:#fbb040;width:125px;border-radius: 20px"),
-                  #        # p("The chart below shows the probability that water has been detected in this picture with our machine learning model"),
-                  #         uiOutput(outputId = "camml")))
-                  #        # highchartOutput(outputId ="tf_predict")))
-                  # ),
-                  tabPanel(
-                    "Site Info",
-                    h3("Site description coming soon"),
-                    actionButton("view_on_map_camera", label = "View site on map", icon = icon("map"))
+                # tabBox(
+                #   collapsible = F,
+                #   type = "tabs",
+                #   tabPanel(
+                #     "Pictures",
+                #     imageOutput(outputId = "camera"),
+                #     uiOutput("firstCameraSelection", align = "center"),
+                #     uiOutput("secondCameraSelection", align = "center")
+                #   ),
+                #   # column(6,
+                #   #        h1("Water detected?",tippy(icon("info-circle",style="font-size:16px"), tooltip = div(h5("We are using machine learning to detect water on the road surface using our flood cams.",br(),br(),"The model used here is trained to distinguish pictures that have water in them from those that do not. Cars, salt water stains, sun glare, and other features in the photos can decrease the accuracy of the model.",br(),br(),"This model is still in development and is for informational purposes only."), style = "text-align:left"))),
+                #   #        div(p("In Development",style="color:white;text-align: center"),style="background-color:#fbb040;width:125px;border-radius: 20px"),
+                #   #        # p("The chart below shows the probability that water has been detected in this picture with our machine learning model"),
+                #   #         uiOutput(outputId = "camml")))
+                #   #        # highchartOutput(outputId ="tf_predict")))
+                #   # ),
+                #   tabPanel(
+                #     "Site Info",
+                #     h3("Site description coming soon"),
+                #     actionButton("view_on_map_camera", label = "View site on map", icon = icon("map"))
                     
-                  )
+                #   )
                   
+                # )
+                fluidRow(
+                    column(width = 6,
+                          div(class="card",
+                              div(class = "card-body",
+                                  imageOutput(outputId = "camera"),
+                                  uiOutput("firstCameraSelection", align = "center"),
+                                  uiOutput("secondCameraSelection", align = "center")
+                              )
+                          )
+                    ),
                 )
-                
         ),
         tabItem(tabName = "Sensors",
                 uiOutput("dashboard_panels")
