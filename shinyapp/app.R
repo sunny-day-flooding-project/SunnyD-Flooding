@@ -220,7 +220,7 @@ ui <- bs4Dash::dashboardPage(
       menuItem("Data", tabName = "Data", icon = icon("database")),
       menuItem("Flood Cam", tabName = "Pictures", icon = icon("camera")),
       a(HTML('<li class="nav-item">
-    <a class="nav-link" href="https://tarheels.live/sunnydayflood/" target="_blank">
+    <a class="nav-link" href="https://tarheels.live/sunny/" target="_blank">
       <i class="fas fa-external-link-alt nav-icon" role="presentation" aria-label="external-link-alt icon"></i>
       <p>Website
       <span class="right badge badge-success">Link</span></p>
