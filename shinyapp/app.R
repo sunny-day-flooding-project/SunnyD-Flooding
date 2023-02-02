@@ -68,6 +68,10 @@ data_for_display <- con %>%
 sensor_surveys <- con %>% 
   tbl("sensor_surveys")
 
+local_water_levels <- con %>% 
+  tbl("external_api_data") %>%
+  filter(type == "water_level")
+
 fiman_gauge_key <- read_csv("fiman_gauge_key.csv")
 
 global <- getOption("highcharter.global")
@@ -121,45 +125,57 @@ noaa_wl <- function(id, type, begin_date, end_date){
     return(wl)
   }
 
-fiman_wl <- function(id, begin_date, end_date){
-  station_keys <- fiman_gauge_key %>% 
-    filter(site_id == id) %>% 
-    filter(Sensor == "Water Elevation")
+fiman_wl <- function(site_id, begin_date, end_date){
+  # station_keys <- fiman_gauge_key %>% 
+  #   filter(site_id == id) %>% 
+  #   filter(Sensor == "Water Elevation")
   
-  request <- httr::GET(url = Sys.getenv("FIMAN_URL"),
-                       query = list(
-                         "site_id" = station_keys$site_id,
-                         "data_start" = paste0(format(begin_date, "%Y-%m-%d %H:%M:%S")),
-                         "date_end" = paste0(format(end_date, "%Y-%m-%d %H:%M:%S")),
-                         "format_datetime"="%Y-%m-%d %H:%M:%S",
-                         "tz" = "UTC",
-                         "show_raw" = T,
-                         "show_quality" = T,
-                         "sensor_id" =  station_keys$sensor_id
+  # request <- httr::GET(url = Sys.getenv("FIMAN_URL"),
+  #                      query = list(
+  #                        "site_id" = station_keys$site_id,
+  #                        "data_start" = paste0(format(begin_date, "%Y-%m-%d %H:%M:%S")),
+  #                        "date_end" = paste0(format(end_date, "%Y-%m-%d %H:%M:%S")),
+  #                        "format_datetime"="%Y-%m-%d %H:%M:%S",
+  #                        "tz" = "UTC",
+  #                        "show_raw" = T,
+  #                        "show_quality" = T,
+  #                        "sensor_id" =  station_keys$sensor_id
                          
-                       ))
+  #                      ))
   
-  content <- request$content %>% 
-    xml2::read_xml() %>% 
-    xml2::as_list() %>% 
-    as_tibble()
+  # content <- request$content %>% 
+  #   xml2::read_xml() %>% 
+  #   xml2::as_list() %>% 
+  #   as_tibble()
   
-  parsed_content <- content$onerain$response %>% 
-    as_tibble() %>% 
-    unnest_wider("general") %>% 
-    unnest(cols = names(.)) %>% 
-    unnest(cols = names(.)) %>% 
-    mutate(data_time = lubridate::ymd_hms(data_time),
-           data_value = as.numeric(data_value))
+  # parsed_content <- content$onerain$response %>% 
+  #   as_tibble() %>% 
+  #   unnest_wider("general") %>% 
+  #   unnest(cols = names(.)) %>% 
+  #   unnest(cols = names(.)) %>% 
+  #   mutate(data_time = lubridate::ymd_hms(data_time),
+  #          data_value = as.numeric(data_value))
   
-  wl <- parsed_content %>%
-    transmute(
-      id = id,
-      date = data_time,
-      level = data_value,
-      entity = "FIMAN",
-      notes = "observation"
-    )
+  # wl <- parsed_content %>%
+  #   transmute(
+  #     id = id,
+  #     date = data_time,
+  #     level = data_value,
+  #     entity = "FIMAN",
+  #     notes = "observation"
+  #   )
+  wl <- local_water_levels %>% 
+      filter(id == site_id, date >= begin_date, date <= end_date) %>%
+      select(id, date, value, api_name) %>%
+      arrange(date) %>%
+      transmute(
+        id = id,
+        date = date,
+        level = value,
+        entity = api_name,
+        notes = "observation"
+      ) %>%
+      as_tibble()
   
   return(wl)
 }
@@ -173,7 +189,7 @@ get_local_wl <- function(wl_id, wl_src, type = c("obs"), begin_date, end_date) {
                           type = type,
                           begin_date = begin_date,
                           end_date = end_date),
-         "FIMAN" = fiman_wl(id = wl_id,
+         "FIMAN" = fiman_wl(site_id = wl_id,
                             begin_date = begin_date,
                             end_date = end_date)
   )
@@ -1310,17 +1326,25 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$data_sensor, {
-    
-    updateMaterialSwitch(session, 
-                      inputId = "view_3rdparty_data",
-                      value = F)
-    
-    if(is.na(isolate(local_wl_metadata()$wl_url))){
-      shinyjs::disable(id = "view_3rdparty_data")
-    }
-    
-    if(!is.na(isolate(local_wl_metadata()$wl_url))){
-      shinyjs::enable(id = "view_3rdparty_data")
+    # Always show third party data for CB/FIMAN locations
+    if(grepl( 'CB_', input$data_sensor, fixed = TRUE)) {
+      updateMaterialSwitch(session, 
+                            inputId = "view_3rdparty_data",
+                            value = T)
+      shinyjs::hide(id = "view_3rdparty_data")
+    } else {
+      updateMaterialSwitch(session, 
+                            inputId = "view_3rdparty_data",
+                            value = F)
+
+      shinyjs::show(id = "view_3rdparty_data")
+      if(is.na(isolate(local_wl_metadata()$wl_url))){
+        shinyjs::disable(id = "view_3rdparty_data")
+      }
+      
+      if(!is.na(isolate(local_wl_metadata()$wl_url))){
+        shinyjs::enable(id = "view_3rdparty_data")
+      }
     }
     
   })
