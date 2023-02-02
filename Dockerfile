@@ -1,4 +1,4 @@
-FROM rocker/shiny:4.1.0
+FROM rocker/shiny:4.2.0
 
 # system libraries of general use
 ## install debian packages
