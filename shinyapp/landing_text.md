@@ -6,8 +6,4 @@ monitoring sites.
 
 </br>
 
-**More sensors coming Spring 2022**
-
-</br>
-
 *Data & images are preliminary and for informational use only*
