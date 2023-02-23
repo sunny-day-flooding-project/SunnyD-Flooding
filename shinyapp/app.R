@@ -1368,7 +1368,7 @@ server <- function(input, output, session) {
   })
   
   
-  observeEvent(c(input$get_plot_data, input$view_3rdparty_data),{
+  observeEvent(c(input$get_plot_data, input$view_3rdparty_data, input$data_sensor),{
     req(input$view_3rdparty_data == T,
         "obs" %in% unlist(isolate(local_wl_metadata())$types),
         abs(input$dateRange[2] - input$dateRange[1]) <=30,
