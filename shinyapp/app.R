@@ -461,7 +461,7 @@ ui <- bs4Dash::dashboardPage(
         tabItem(tabName = "Data",
                 
                 # Add a banner if a sensor site is "under construction"
-                uiOutput("construction_banner"),
+                # uiOutput("construction_banner"),
                 
                 # Time series interactive plot or data table in separate tabs
                 box(width=12, 
@@ -1425,18 +1425,18 @@ server <- function(input, output, session) {
              collect())
   })
   
-  output$construction_banner <- renderUI({
-    if(site_info()$under_construction == T){
-      return(
-        box(title = p("🚧",strong("Site Under Construction"),"🚧"),
-            width=12,
-            status = "warning",
-            solidHeader = T,
-            collapsed = T,
-            p("Pardon our mess! We are working to get this sensor site up and running."))
-      )
-    }
-  })
+  # output$construction_banner <- renderUI({
+  #   if(site_info()$under_construction == T){
+  #     return(
+  #       box(title = p("🚧",strong("Site Under Construction"),"🚧"),
+  #           width=12,
+  #           status = "warning",
+  #           solidHeader = T,
+  #           collapsed = T,
+  #           p("Pardon our mess! We are working to get this sensor site up and running."))
+  #     )
+  #   }
+  # })
   
   output$site_notes <- renderUI({
     switch(site_info()$notes != "NA",
