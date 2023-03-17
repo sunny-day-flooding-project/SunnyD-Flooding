@@ -26,7 +26,7 @@ library(shinyjs)
 library(bs4Dash)
 library(foreach)
 library(xml2)
-library(tidyverse)
+library(tidyverse) 
 
 # HTML waiting screen for initial load
 waiting_screen <- tagList(
@@ -232,12 +232,20 @@ ui <- bs4Dash::dashboardPage(
       menuItem("Data", tabName = "Data", icon = icon("database")),
       menuItem("Flood Cam", tabName = "Pictures", icon = icon("camera")),
       a(HTML('<li class="nav-item">
-    <a class="nav-link" href="https://tarheels.live/sunny/" target="_blank">
-      <i class="fas fa-external-link-alt nav-icon" role="presentation" aria-label="external-link-alt icon"></i>
-      <p>Website
-      <span class="right badge badge-success">Link</span></p>
-    </a>
-  </li>')),
+          <a class="nav-link" href="https://tarheels.live/sunny/" target="_blank">
+            <i class="fas fa-external-link-alt nav-icon" role="presentation" aria-label="external-link-alt icon"></i>
+            <p>Website
+            <span class="right badge badge-success">Link</span></p>
+          </a>
+        </li>')
+      ),
+      a(HTML('<li class="nav-item">
+                <a class="nav-link" href="http://eepurl.com/hM74xn" target="_blank">
+                  <i class="fas fa-envelope nav-icon" role="presentation" aria-label="external-link-alt icon"></i>
+                  <p>Sign Up for Flood Alerts</p>
+                </a>
+              </li>')
+      ),
       # menuItem("Website", icon = icon("info-circle"), href = "https://tarheels.live/sunnydayflood/", newTab = T),
       menuItem("Sensors", tabName = "Sensors", icon = icon("microchip"),condition = "output.admin_login_status")
     )
@@ -919,8 +927,24 @@ server <- function(input, output, session) {
       paste0(input$data_sensor, "_",format(reactive_min_date(),"%Y%m%d"), "_",format(reactive_max_date(), "%Y%m%d"), ".csv")
     },
     content = function(file) {
-      write.csv(sensor_data() |> arrange(date), file)
+      downloadData = sensor_data() %>% 
+        select(date, sensor_elevation, road_elevation, sensor_water_level_adj, road_water_level_adj) %>%
+        arrange(date) %>%
+        mutate(
+          date = format(date, '%m/%d/%Y %H:%M'),
+          sensor_elevation = round(sensor_elevation, digits=2),
+          road_elevation = round(road_elevation, digits=2),
+          sensor_water_level_adj = round(sensor_water_level_adj, digits=2),
+          road_water_level_adj = round(road_water_level_adj, digits=2),
+        )
+
+      headers <- c('timestamp (UTC)','sensor elev. (ft NAVD88)','road elev. (ft NAVD88)','water level (ft NAVD88)','water level (ft above or below road elev.)')
+      colnames(downloadData) <- headers
+      write_csv(downloadData, file)
     }
+    # content = function(file) {
+    #   write.csv(sensor_data() |> arrange(date), file)
+    # }
   )
   
   # Input drop-downs menus for data page
@@ -1440,7 +1464,7 @@ server <- function(input, output, session) {
   
   output$site_notes <- renderUI({
     switch(site_info()$notes != "NA",
-           p(strong("Site notes: "),isolate(site_info())$notes),
+           p(strong("Sensor Installation Date: "),isolate(site_info())$notes),
            "")
     
     # p(strong("Site notes: "),isolate(site_info())$notes)
