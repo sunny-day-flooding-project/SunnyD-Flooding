@@ -510,7 +510,10 @@ ui <- bs4Dash::dashboardPage(
                                   selectInput(inputId = "elev_datum", label = "Elevation Datum", selectize = F,choices = c("Road","NAVD88"), selected = "Road"),
                                   p(strong("Local water levels"),tippy(icon("info-circle",style="font-size:14px"), h5("Click the button below to add nearby downstream water levels to the plot.",br(),br(),"Adding these data can help visualize when flooding may occur.",br(),br(),"Turning this option on may slow down the drawing of the plot.",style = "text-align:left;"))),
                                   materialSwitch(inputId = "view_3rdparty_data", label = ,value = F,inline=T, status = "success"),
-                                  uiOutput(outputId="thirdparty_info", style="display:inline;")
+                                  uiOutput(outputId="thirdparty_info", style="display:inline;"),
+                                  br(),
+                                  materialSwitch(inputId = "view_alt_3rdparty_data", label = ,value = F,inline=T, status = "success"),
+                                  uiOutput(outputId="alt_thirdparty_info", style="display:inline;")
                            ),
                           #  column(width=1),
                            column(width = 4,
@@ -677,11 +680,12 @@ server <- function(input, output, session) {
   
   admin_login_status <- reactiveVal(value = F)
   
-  
   output$admin_status <- renderUI(
     span(p("Status: ",style="display:inline-block;font-weight: bold;"), p("Logged out", style="display:inline-block;")) 
   )
   
+  # Hide alternate 3rd party data input by default
+  shinyjs::hide(id = "view_alt_3rdparty_data")
 
   output$admin_login_status <- reactive({admin_login_status()})
 
@@ -1345,6 +1349,19 @@ server <- function(input, output, session) {
       mutate(types = str_split(wl_types, pattern = ", "),
              url = wl_url)
   })
+
+  alt_local_wl_metadata <- reactive({
+    req(input$data_sensor)
+
+    input$data_sensor
+
+    sensor_surveys %>% 
+      filter(sensor_ID == !!input$data_sensor) %>%
+      filter(date_surveyed == max(date_surveyed, na.rm=T)) %>% 
+      collect() %>% 
+      mutate(types = str_split(alt_wl_types, pattern = ", "),
+             url = alt_wl_url)
+  })
   
   output$thirdparty_info <- renderUI({
     wl_metadata_collected <- local_wl_metadata()
@@ -1354,6 +1371,13 @@ server <- function(input, output, session) {
     
     else(helpText("  Not available"))
 
+  })
+
+  output$alt_thirdparty_info <- renderUI({
+    alt_wl_metadata_collected <- alt_local_wl_metadata()
+    if(!is.na(alt_wl_metadata_collected$alt_wl_url)){
+      helpText("  Data source: ",a(href=alt_wl_metadata_collected$alt_wl_url,alt_wl_metadata_collected$alt_wl_src, target = "_blank", class = "pretty-link"))
+    }
   })
   
   
@@ -1373,22 +1397,29 @@ server <- function(input, output, session) {
       updateMaterialSwitch(session, 
                             inputId = "view_3rdparty_data",
                             value = T)
-      shinyjs::hide(id = "view_3rdparty_data")
     } else {
       updateMaterialSwitch(session, 
                             inputId = "view_3rdparty_data",
                             value = F)
-
-      shinyjs::show(id = "view_3rdparty_data")
-      if(is.na(isolate(local_wl_metadata()$wl_url))){
-        shinyjs::disable(id = "view_3rdparty_data")
-      }
-      
-      if(!is.na(isolate(local_wl_metadata()$wl_url))){
-        shinyjs::enable(id = "view_3rdparty_data")
-      }
+    }
+    shinyjs::show(id = "view_3rdparty_data")
+    if(is.na(isolate(local_wl_metadata()$wl_url))){
+      shinyjs::disable(id = "view_3rdparty_data")
     }
     
+    if(!is.na(isolate(local_wl_metadata()$wl_url))){
+      shinyjs::enable(id = "view_3rdparty_data")
+    }
+
+    if(is.na(isolate(alt_local_wl_metadata()$alt_wl_url))){
+      shinyjs::hide(id = "view_alt_3rdparty_data")
+      shinyjs::disable(id = "view_alt_3rdparty_data")
+    }
+    
+    if(!is.na(isolate(alt_local_wl_metadata()$alt_wl_url))){
+      shinyjs::show(id = "view_alt_3rdparty_data")
+      shinyjs::enable(id = "view_alt_3rdparty_data")
+    }
   })
   
   
@@ -1439,6 +1470,31 @@ server <- function(input, output, session) {
              road_water_level= level-plot_sensor_stats$road_elevation,
              sensor_water_level=level)
     
+  })
+
+  observeEvent(c(input$get_plot_data, input$view_alt_3rdparty_data, input$data_sensor),{
+    req(input$view_alt_3rdparty_data == T,
+        "obs" %in% unlist(isolate(alt_local_wl_metadata())$types),
+        abs(input$dateRange[2] - input$dateRange[1]) <=30,
+        nrow(sensor_data()!=0))
+
+    w$show()
+
+    min_date = min(input$dateRange)
+    max_date = max(input$dateRange)
+
+    plot_sensor_stats <- sensor_locations %>%
+      filter(sensor_ID %in% input$data_sensor)
+
+    plot_alt_3rd_party_data_obs <<- get_local_wl(wl_id = isolate(alt_local_wl_metadata())$alt_wl_id,
+                                             wl_src = isolate(alt_local_wl_metadata())$alt_wl_src,
+                                             type = "obs",
+                                             begin_date = min_date,
+                                             end_date = max_date) %>%
+      mutate(date = datetime_to_timestamp(date),
+             road_water_level= level-plot_sensor_stats$road_elevation,
+             sensor_water_level=level)
+    w$hide()
   })
   
   site_info <- reactive({
@@ -1643,6 +1699,21 @@ server <- function(input, output, session) {
                                      name = unique(plot_3rd_party_data_predict$entity),
                                      type="line",
                                      color="#01CB4D",
+                                     visible = T)
+        }
+      }
+
+      if(input$view_alt_3rdparty_data == T) {
+
+        plot_alt_3rd_party_data_stats <- alt_local_wl_metadata()
+
+        if("obs" %in% unlist(plot_alt_3rd_party_data_stats$types)) {
+          hc <- hc %>% hc_add_series(plot_alt_3rd_party_data_obs %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level","sensor_water_level")),
+                                     hcaes(x=date,
+                                           y=wl),
+                                     name = unique(plot_alt_3rd_party_data_obs$entity),
+                                     type="line",
+                                     color="#01DC15",
                                      visible = T)
         }
       }
