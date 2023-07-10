@@ -59,10 +59,12 @@ onStop(function() {
 })
 
 data_for_display <- con %>% 
-  tbl("data_for_display")
+  tbl("data_for_display") %>%
+  filter(sensor_ID != 'CB_02')
 
 sensor_surveys <- con %>% 
-  tbl("sensor_surveys")
+  tbl("sensor_surveys") %>%
+  filter(sensor_ID != 'CB_02')
 
 local_water_levels <- con %>% 
   tbl("external_api_data") %>%
@@ -843,6 +845,7 @@ server <- function(input, output, session) {
   
   camera_locations <- con %>% 
     tbl("camera_locations") %>%
+    filter(camera_ID != 'CAM_CB_02') %>%
     collect() %>% 
     left_join(con %>% 
                 tbl("photo_info") %>% 
