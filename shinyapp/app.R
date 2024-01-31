@@ -807,8 +807,12 @@ server <- function(input, output, session) {
   
   # Load Data
   # Update sensor locations with most recent data from database
-
-  sensor_locations <- data_for_display %>%
+  # Get data from last 90 days only to speed up load time
+  start.date <- Sys.Date() - 90
+  tmp <- con %>% 
+    tbl("data_for_display") %>%
+    filter(date > start.date)
+  sensor_locations <- tmp %>%
                 group_by(sensor_ID) %>%
                 filter(date == max(date, na.rm=T)) %>% 
                 collect() %>% 
