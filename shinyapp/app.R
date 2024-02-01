@@ -2071,6 +2071,17 @@ server <- function(input, output, session) {
     all_panels
     
   })
+
+  updateSelectFromURL <- function(query) {
+    updateSelectInput(session, "city_name", selected=query[['location']])
+  }
+
+  observe({
+      query <- parseQueryString(session$clientData$url_search)
+      if (!is.null(query[['location']])) {
+        delay(1000, updateSelectFromURL(query))
+      }
+  })
   
   waiter::waiter_hide()
 }
