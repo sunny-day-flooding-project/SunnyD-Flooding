@@ -1207,8 +1207,15 @@ server <- function(input, output, session) {
     }
     
     if(input$city_name != ""){
+      # Down East has sensors that are spread further apart than other locations so use a smaller zoom value
+      # This should get moved into a database table if additional sites are added that need a different zoom level
+      if (input$city_name == 'Down East, North Carolina') {
+        zoom <- 12
+      } else {
+        zoom <- 16
+      }
       leafletProxy(mapId = "m") %>% 
-        setView(lng = map1_selected_location()[1], lat = map1_selected_location()[2], zoom=16)
+        setView(lng = map1_selected_location()[1], lat = map1_selected_location()[2], zoom=zoom)
     }
   })
   
@@ -2076,11 +2083,27 @@ server <- function(input, output, session) {
     updateSelectInput(session, "city_name", selected=query[['location']])
   }
 
+  zoomToSensorFromURL <- function(query) {
+    selected <- query[['sensor_ID']]
+    selected_sensor <- con %>%
+      tbl('sensor_surveys') %>% 
+      filter(sensor_ID == selected) %>%
+      slice_max(date_surveyed, n=1) %>%
+      collect()
+
+    if (nrow(selected_sensor) == 1) {
+      leafletProxy(mapId = "m") %>% 
+        setView(lng = selected_sensor$lng, lat = selected_sensor$lat, zoom=20)
+    }
+  }
+
   observe({
       query <- parseQueryString(session$clientData$url_search)
-      if (!is.null(query[['location']])) {
+      if (!is.null(query[['sensor_ID']])) {
+        delay(1000, zoomToSensorFromURL(query))
+      } else if (!is.null(query[['location']])) {
         delay(1000, updateSelectFromURL(query))
-      }
+      }  
   })
   
   waiter::waiter_hide()
