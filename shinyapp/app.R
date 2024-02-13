@@ -1159,11 +1159,7 @@ server <- function(input, output, session) {
                                 labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
                                 layerId = camera_locations$camera_ID,
                                 color = "black",
-                                fillColor = sensor_locations %>%
-                                  left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
-                                  left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
-                                                    "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
-                                  pull(flood_color),
+                                fillColor = "#28a745",
                                 fillOpacity = 1.0
                             ) %>%
                              # leaflet::addLegend('bottomright', pal = pal_rev, values = c(-3.5,0.5),
@@ -1318,11 +1314,7 @@ server <- function(input, output, session) {
                          labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
                          layerId = camera_locations$camera_ID,
                          color = "black",
-                         fillColor = sensor_locations %>%
-                           left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
-                           left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
-                                            "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
-                           pull(flood_color),
+                         fillColor = "#28a745",
                          fillOpacity = 1.0
         ) 
       
