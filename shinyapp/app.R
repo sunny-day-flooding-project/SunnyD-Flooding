@@ -1159,10 +1159,10 @@ server <- function(input, output, session) {
                                 labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
                                 layerId = camera_locations$camera_ID,
                                 color = "black",
-                                fillColor = sensor_locations %>%
+                                fillColor = camera_locations %>%
                                   left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
-                                  left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
-                                                    "flood_color" = c("#28a745", "#28a745", "#28a745", "#28a745")), by = "flood_status") %>% 
+                                  left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING", NA),
+                                                    "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745", "grey")), by = "flood_status") %>% 
                                   pull(flood_color),
                                 fillOpacity = 1.0
                             ) %>%
@@ -1170,11 +1170,11 @@ server <- function(input, output, session) {
                              #                    title = 'Water level<br>relative to<br>surface (ft)',
                              #                    opacity = 1,
                              #                    labFormat = labelFormat(transform = function(x) sort(x, decreasing = TRUE))) %>% 
-                            #  leaflet::addLegend('bottomright',
-                            #                     title = "Flood status",
-                            #                     colors = c("grey","#dc3545","#ffc107","#28a745"),
-                            #                     labels = c("Unknown","Flooding", "Warning", "Not Flooding"),
-                            #                     opacity = 1) %>% 
+                             leaflet::addLegend('bottomright',
+                                                title = "Flood status",
+                                                colors = c("grey","#dc3545","#ffc107","#28a745"),
+                                                labels = c("Unknown","Flooding", "Warning", "Not Flooding"),
+                                                opacity = 1) %>% 
                              addLayersControl(
                                baseGroups = c("Positron (default)", "Dark Matter","Imagery", "OSM"),
                                options = layersControlOptions(collapsed = T)) %>% 
@@ -1285,7 +1285,6 @@ server <- function(input, output, session) {
     if(input$map_layers == 1){
       leafletProxy(mapId = "m") %>% 
         clearGroup("camera_site") %>% 
-        clearControls() %>%
         addCircleMarkers(data = sensor_locations %>% 
                            left_join(isolate(map_flood_status_reactive()), by = "sensor_ID"), group = "sensor_site",
                          # popup = ~html_popups,
@@ -1300,18 +1299,12 @@ server <- function(input, output, session) {
                            left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING"),
                                             "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745")), by = "flood_status") %>% 
                            pull(flood_color),
-                         fillOpacity = 1) %>%
-                         leaflet::addLegend('bottomright',
-                                                title = "Flood status",
-                                                colors = c("grey","#dc3545","#ffc107","#28a745"),
-                                                labels = c("Unknown","Flooding", "Warning", "Not Flooding"),
-                                                opacity = 1)
+                         fillOpacity = 1) 
     }
     
     if(input$map_layers == 2){
       leafletProxy(mapId = "m") %>% 
         clearGroup("sensor_site") %>% 
-        clearControls() %>%
         # addAwesomeMarkers(data = camera_locations, icon=map_icon, group = "camera_site",
         #                   label = lapply(camera_locations_labels,HTML),
         #                   labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
@@ -1325,7 +1318,11 @@ server <- function(input, output, session) {
                          labelOptions = labelOptions(direction = "top", style=list("border-radius" = "10px")),
                          layerId = camera_locations$camera_ID,
                          color = "black",
-                         fillColor = "#28a745",
+                         fillColor = camera_locations %>%
+                            left_join(isolate(map_flood_status_reactive()), by = "sensor_ID") %>%
+                            left_join(tibble("flood_status" = c("UNKNOWN","FLOODING", "WARNING", "NOT FLOODING", NA),
+                                              "flood_color" = c("grey", "#dc3545", "#ffc107", "#28a745", "grey")), by = "flood_status") %>% 
+                            pull(flood_color),
                          fillOpacity = 1.0
         ) 
       
