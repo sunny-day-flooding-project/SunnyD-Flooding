@@ -28,6 +28,9 @@ library(foreach)
 library(xml2)
 library(tidyverse) 
 
+ # # Source env variables if working on desktop
+source("C:\\Users\\ianiac\\OneDrive - University of North Carolina at Chapel Hill\\Documents\\Sunny Day\\dev\\db_connect_local.R") 
+
 # HTML waiting screen for initial load
 waiting_screen <- tagList(
   spin_wave(),
@@ -447,6 +450,25 @@ ui <- bs4Dash::dashboardPage(
           border: none;
         }
         
+        @media (min-width:992px) and (max-width: 1120px) {
+          #guide img {
+            max-width: 700px;
+          }
+        }
+
+        @media (max-width:992px) {
+          #guide img {
+            max-width: 600px;
+            height: auto;
+          }
+        }
+
+        @media (max-width:670px) {
+          #guide img {
+            max-width: 400px;
+            height: auto;
+          }
+        }
       '))),
       tabItems(
         
@@ -565,6 +587,14 @@ ui <- bs4Dash::dashboardPage(
                          p("Data will be downloaded as a .csv file named",strong("site name_minimum date_maximum date.csv"),align="center"),
                          br(),
                          div(downloadButton(outputId = "downloadData", label = "Download Selected Data", class = "download_button", icon = icon("download")), align="center")
+                       ),
+                       tabPanel(
+                        "How to understand this plot",
+                        fluidRow(
+                           column(width=12,
+                            imageOutput(outputId = "guide", width = "100%")
+                           )
+                         )
                        )
                 )
                 
@@ -631,6 +661,11 @@ server <- function(input, output, session) {
   
   # Initialize wait screen for image rendering
   w2 <- Waiter$new(id="camera",
+                   html = spin_3k(),
+                   color = transparent(.75)) 
+
+  # Initialize wait screen for plot guide rendering
+  w3 <- Waiter$new(id="guide",
                    html = spin_3k(),
                    color = transparent(.75)) 
   
@@ -871,6 +906,13 @@ server <- function(input, output, session) {
       )
     )
   
+  reference_elevations <- con %>%
+    tbl("sensor_surveys") %>%
+    group_by(sensor_ID) %>% 
+    select(sensor_ID, reference_elevation, reference_elevation_type) %>%
+    distinct() %>%
+    collect()
+
   # Labels for sensor map 1
   sensor_locations_labels <- as.list(sensor_locations$html_popups)
   
@@ -1590,6 +1632,9 @@ server <- function(input, output, session) {
       
       plot_sensor_stats <- sensor_locations %>% 
         filter(sensor_ID %in% input$data_sensor)
+
+      reference_elevation_info <- reference_elevations %>%
+        filter(sensor_ID %in% input$data_sensor) 
       
       x <- plot_sensor_data %>% 
         arrange(date) %>% 
@@ -1600,6 +1645,7 @@ server <- function(input, output, session) {
         
         road_elevation_limit <- 0
         sensor_elevation_limit <- plot_sensor_stats$sensor_elevation - plot_sensor_stats$road_elevation
+        reference_elevation_limit <- reference_elevation_info$reference_elevation - plot_sensor_stats$road_elevation
         y_axis_max <- ifelse(nrow(x) != 0,
                              c(ifelse(max(x$road_water_level_adj, na.rm=T) > road_elevation_limit, max(x$road_water_level_adj, na.rm=T) , road_elevation_limit+0.25)),
                              c(NA))
@@ -1610,10 +1656,19 @@ server <- function(input, output, session) {
         
         road_elevation_limit <- plot_sensor_stats$road_elevation
         sensor_elevation_limit <- plot_sensor_stats$sensor_elevation
+        reference_elevation_limit <- reference_elevation_info$reference_elevation
         y_axis_max <- ifelse(nrow(x)!=0,
                              c(ifelse(max(x$sensor_water_level_adj, na.rm=T) > road_elevation_limit, max(x$sensor_water_level_adj, na.rm=T) , road_elevation_limit +0.25 )),
                              c(NA))
-        
+      }
+
+      reference_elevation_limit_label <- ifelse(reference_elevation_info$reference_elevation_type == 'drain_bottom', "Bottom of drain", "Land elevation")
+      if (!is.na(reference_elevation_limit) & input$view_3rdparty_data == F & input$view_alt_3rdparty_data == F) {
+        y_axis_min <- ifelse(nrow(x)!=0,
+                             c(ifelse(min(x$sensor_water_level_adj, na.rm=T) < reference_elevation_limit, min(x$sensor_water_level_adj, na.rm=T) , reference_elevation_limit - 0.25 )),
+                             c(NA)) 
+      } else {
+         y_axis_min <- NULL
       }
       
       hc <- highchart() %>%
@@ -1685,8 +1740,16 @@ server <- function(input, output, session) {
                                        label = list(text = "Current time",
                                                     style = list( color = 'black', fontWeight = 'bold'))))) %>%
         hc_yAxis(max = y_axis_max,
+                 min = y_axis_min,
                  title = list(text = "Water Level (ft)"),
                  plotLines = list(
+                  list(value =reference_elevation_limit,
+                        dashStyle = "longdash",
+                        color="#ffc300",
+                        width = 1,
+                        zIndex = 4,
+                        label = list(text = reference_elevation_limit_label,
+                                     style = list( color = '#ffc300', fontWeight = 'bold'))),
                    list(value =road_elevation_limit,
                         dashStyle = "longdash",
                         color="red",
@@ -1871,6 +1934,36 @@ server <- function(input, output, session) {
     
     #             })
     w2$hide()
+  })
+
+  observe({
+    req(input$data_sensor)
+
+    w3$show()
+
+    output$guide <- renderImage({
+        
+        outfile <- tempfile(fileext='.jpg')
+
+        if(grepl( "DE", input$data_sensor, fixed = TRUE)) {
+          image_src = "images/SunnyD_MarshSchematic.png"
+        } else {
+          image_src = "images/SunnyD_RoadwaySchematic.png"
+        }
+        
+        realtime_img <- magick::image_read(image_src) 
+      
+        realtime_img %>% 
+          magick::image_write(path = outfile)
+        
+        # Return a list
+        list(src = outfile,
+            alt = "Schematic showing how to read plot",
+            height = "100%")
+        
+      }, deleteFile = T)
+
+      w3$hide()
   })
   
   
