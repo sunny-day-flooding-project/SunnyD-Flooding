@@ -28,9 +28,6 @@ library(foreach)
 library(xml2)
 library(tidyverse) 
 
- # # Source env variables if working on desktop
-source("C:\\Users\\ianiac\\OneDrive - University of North Carolina at Chapel Hill\\Documents\\Sunny Day\\dev\\db_connect_local.R") 
-
 # HTML waiting screen for initial load
 waiting_screen <- tagList(
   spin_wave(),
