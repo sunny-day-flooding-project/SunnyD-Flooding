@@ -1659,7 +1659,7 @@ server <- function(input, output, session) {
                              c(NA))
       }
 
-      reference_elevation_limit_label <- ifelse(reference_elevation_info$reference_elevation_type == 'drain_bottom', "Bottom of drain", "Land elevation")
+      reference_elevation_limit_label <- ifelse(reference_elevation_info$reference_elevation_type == 'drain_bottom', "Bottom of Drain", "Land Elevation")
       if (!is.na(reference_elevation_limit) & input$view_3rdparty_data == F & input$view_alt_3rdparty_data == F) {
         y_axis_min <- ifelse(nrow(x)!=0,
                              c(ifelse(min(x$sensor_water_level_adj, na.rm=T) < reference_elevation_limit, min(x$sensor_water_level_adj, na.rm=T) , reference_elevation_limit - 0.25 )),
@@ -1673,7 +1673,7 @@ server <- function(input, output, session) {
                       hcaes(x=date,
                             y = wl),
                       type="line",
-                      name="Water Level (grey dash = no water)",
+                      name="Water Level",
                       color="#1d1d75",
                       # Controls when points are shown on plot (only on zoom)
                       marker = list(
