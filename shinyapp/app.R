@@ -588,6 +588,10 @@ ui <- bs4Dash::dashboardPage(
                        tabPanel(
                         "How to understand this plot",
                         fluidRow(
+                          column(width=12,
+                            uiOutput("guide_text"),
+                            hr()
+                           ),
                            column(width=12,
                             imageOutput(outputId = "guide", width = "100%")
                            )
@@ -1938,18 +1942,20 @@ server <- function(input, output, session) {
 
     w3$show()
 
+    if(grepl( "DE", input$data_sensor, fixed = TRUE)) {
+          image_src = "images/SunnyD_MarshSchematic.png"
+          guide_text = "This water level sensor is installed on the side of a road just above ground level. Measurements from our sensor (the blue line on the data plot) above the dashed red line indicate flooding on the road."
+    } else {
+          image_src = "images/SunnyD_RoadwaySchematic.png"
+          guide_text = "This water level sensor is installed in a storm drain. Measurements from our sensor (the blue line) above the red dotted line indicate flooding on the road."
+    }
+
+    output$guide_text <- renderText({ guide_text })
+
     output$guide <- renderImage({
         
-        outfile <- tempfile(fileext='.jpg')
-
-        if(grepl( "DE", input$data_sensor, fixed = TRUE)) {
-          image_src = "images/SunnyD_MarshSchematic.png"
-        } else {
-          image_src = "images/SunnyD_RoadwaySchematic.png"
-        }
-        
+        outfile <- tempfile(fileext='.png')
         realtime_img <- magick::image_read(image_src) 
-      
         realtime_img %>% 
           magick::image_write(path = outfile)
         
@@ -1960,7 +1966,7 @@ server <- function(input, output, session) {
         
       }, deleteFile = T)
 
-      w3$hide()
+    w3$hide()
   })
   
   
