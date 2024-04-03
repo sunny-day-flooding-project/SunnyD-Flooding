@@ -2010,124 +2010,127 @@ server <- function(input, output, session) {
       
       n_filtered_cameras <- nrow(filtered_cameras)
 
-      sensor_panels <- foreach(i = 1:n_filtered_sensors) %do% {
-        if(filtered_sensors$flood_status[i] == "NOT FLOODING"){
-          sensor_label <- boxLabel(text = "Good!", status = "success")
-        }
-        if(filtered_sensors$flood_status[i] != "NOT FLOODING"){
-          sensor_label <- boxLabel(text = "Bad!", status = "danger")
-        }
-        
-        matched_camera <- filtered_cameras %>%
-          filter(str_remove(camera_ID, "CAM_") == filtered_sensors$sensor_ID[i])
+      if (n_filtered_sensors == 0) {
+        sensor_panels <- ""
+      } else {
+        sensor_panels <- foreach(i = 1:n_filtered_sensors) %do% {
+          if(filtered_sensors$flood_status[i] == "NOT FLOODING"){
+            sensor_label <- boxLabel(text = "Good!", status = "success")
+          }
+          if(filtered_sensors$flood_status[i] != "NOT FLOODING"){
+            sensor_label <- boxLabel(text = "Bad!", status = "danger")
+          }
+          
+          matched_camera <- filtered_cameras %>%
+            filter(str_remove(camera_ID, "CAM_") == filtered_sensors$sensor_ID[i])
 
-        no_data_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$raw_data_date[i] == filtered_sensors$date[i] & matched_camera$time_since_measurement[i] < 10, T, F)
-        gateway_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$raw_data_date[i] == filtered_sensors$date[i] & matched_camera$time_since_measurement[i] > 10, T, F)
-        processing_data_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$processed[i] == F, T, F)
+          no_data_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$raw_data_date[i] == filtered_sensors$date[i] & matched_camera$time_since_measurement[i] < 10, T, F)
+          gateway_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$raw_data_date[i] == filtered_sensors$date[i] & matched_camera$time_since_measurement[i] > 10, T, F)
+          processing_data_error <- ifelse(filtered_sensors$flood_status[i] != "NOT FLOODING" & filtered_sensors$processed[i] == F, T, F)
 
-        no_data_error_icon <- ifelse(no_data_error,
-                                     as.character(icon("times-circle", style="color:#dc3545 !important")),
-                                     as.character(icon("check-circle",style="color:#28a745 !important")))
-
-        gateway_error_icon <- ifelse(gateway_error,
-                                     as.character(icon("times-circle", style="color:#dc3545 !important")),
-                                     as.character(icon("check-circle",style="color:#28a745 !important")))
-
-        processing_data_error_icon <- ifelse(processing_data_error,
+          no_data_error_icon <- ifelse(no_data_error,
                                       as.character(icon("times-circle", style="color:#dc3545 !important")),
                                       as.character(icon("check-circle",style="color:#28a745 !important")))
 
-        error_table <- tibble("Error Status" = c("Sensor", "Gateway", "Processing"),
-                              "Icons" = c(no_data_error_icon, gateway_error_icon, processing_data_error_icon),
-                              "values" = c(no_data_error, gateway_error, processing_data_error))
-        
-        error_table_as_html <- HTML(paste0('
-                                    <table class = "center">
-                                      <tr>
-                                        <th>  </th>
-                                        <th> Status </th>
-                                      </tr>
-                                      <tr>
-                                        <td> Sensor </td>
-                                        <td>', error_table[1,2],'</td>
-                                      </tr>
-                                      <tr>
-                                        <td> Gateway </td>
-                                        <td>', error_table[2,2],'</td>
-                                      </tr>
-                                      <tr>
-                                        <td> Processing </td>
-                                        <td>', error_table[3,2],'</td>
-                                      </tr>
-                                    </table>'
-                                      )
-        )
-        
-        col_stops <- data.frame(
-          q = c(3.6, 3.4, 3.3),
-          c = c('#55BF3B', '#DDDF0D', '#DF5353'),
-          stringsAsFactors = FALSE
-        )
+          gateway_error_icon <- ifelse(gateway_error,
+                                      as.character(icon("times-circle", style="color:#dc3545 !important")),
+                                      as.character(icon("check-circle",style="color:#28a745 !important")))
 
-        
-        box(width = 12,
-            title = filtered_sensors$sensor_ID[i],
-            label = sensor_label,            
-            status = "gray-dark",
-            solidHeader = T,
-            elevation = 1,
-            div(class = "col-sm-12",
-                fluidRow(p(strong("Details"), style="font-size:20px")),
-                br(),
-                fluidRow(p("Last measurement: ", HTML(filtered_sensors$time_since_measurement_text[i]))),
-                fluidRow(p("Status: ", strong(filtered_sensors$flood_status[i])))
-              ),
-            hr(),
-            div(class = "col-sm-12",
-                fluidRow(p(strong("Status Table"), style="font-size:20px")),
-                fluidRow(error_table_as_html)
-              ),
-            hr(),
-            div(class = "col-sm-12",
-                fluidRow(p(strong("Battery Voltage"), style="font-size:20px")),
-            
-            highchart() %>%
-              hc_chart(type = "solidgauge") %>%
-              hc_pane(
-                startAngle = -90,
-                endAngle = 90,
-                background = list(
-                  outerRadius = '100%',
-                  innerRadius = '60%',
-                  shape = "arc"
-                )
-              ) %>%
-              hc_tooltip(enabled = T) %>% 
-              hc_yAxis(
-                stops = list_parse2(col_stops),
-                lineWidth = 0,
-                minorTickWidth = .25,
-                tickAmount = .25,
-                min = 3.2,
-                max = 5.4,
-                labels = list(y = 26, style = list(fontSize = "16px"))
-              ) %>%
-              hc_add_series(
-                data = filtered_sensors$voltage[i],
-                dataLabels = list(
-                  y = 50,
-                  borderWidth = 0,
-                  useHTML = TRUE,
-                  style = list(fontSize = "30px")
-                )
-              ) %>% 
-              hc_size(height = 300)
-            )
-                     
-            
-        )
+          processing_data_error_icon <- ifelse(processing_data_error,
+                                        as.character(icon("times-circle", style="color:#dc3545 !important")),
+                                        as.character(icon("check-circle",style="color:#28a745 !important")))
+
+          error_table <- tibble("Error Status" = c("Sensor", "Gateway", "Processing"),
+                                "Icons" = c(no_data_error_icon, gateway_error_icon, processing_data_error_icon),
+                                "values" = c(no_data_error, gateway_error, processing_data_error))
+          
+          error_table_as_html <- HTML(paste0('
+                                      <table class = "center">
+                                        <tr>
+                                          <th>  </th>
+                                          <th> Status </th>
+                                        </tr>
+                                        <tr>
+                                          <td> Sensor </td>
+                                          <td>', error_table[1,2],'</td>
+                                        </tr>
+                                        <tr>
+                                          <td> Gateway </td>
+                                          <td>', error_table[2,2],'</td>
+                                        </tr>
+                                        <tr>
+                                          <td> Processing </td>
+                                          <td>', error_table[3,2],'</td>
+                                        </tr>
+                                      </table>'
+                                        )
+          )
+          
+          col_stops <- data.frame(
+            q = c(3.6, 3.4, 3.3),
+            c = c('#55BF3B', '#DDDF0D', '#DF5353'),
+            stringsAsFactors = FALSE
+          )
+
+          
+          box(width = 12,
+              title = filtered_sensors$sensor_ID[i],
+              label = sensor_label,            
+              status = "gray-dark",
+              solidHeader = T,
+              elevation = 1,
+              div(class = "col-sm-12",
+                  fluidRow(p(strong("Details"), style="font-size:20px")),
+                  br(),
+                  fluidRow(p("Last measurement: ", HTML(filtered_sensors$time_since_measurement_text[i]))),
+                  fluidRow(p("Status: ", strong(filtered_sensors$flood_status[i])))
+                ),
+              hr(),
+              div(class = "col-sm-12",
+                  fluidRow(p(strong("Status Table"), style="font-size:20px")),
+                  fluidRow(error_table_as_html)
+                ),
+              hr(),
+              div(class = "col-sm-12",
+                  fluidRow(p(strong("Battery Voltage"), style="font-size:20px")),
+              
+              highchart() %>%
+                hc_chart(type = "solidgauge") %>%
+                hc_pane(
+                  startAngle = -90,
+                  endAngle = 90,
+                  background = list(
+                    outerRadius = '100%',
+                    innerRadius = '60%',
+                    shape = "arc"
+                  )
+                ) %>%
+                hc_tooltip(enabled = T) %>% 
+                hc_yAxis(
+                  stops = list_parse2(col_stops),
+                  lineWidth = 0,
+                  minorTickWidth = .25,
+                  tickAmount = .25,
+                  min = 3.2,
+                  max = 5.4,
+                  labels = list(y = 26, style = list(fontSize = "16px"))
+                ) %>%
+                hc_add_series(
+                  data = filtered_sensors$voltage[i],
+                  dataLabels = list(
+                    y = 50,
+                    borderWidth = 0,
+                    useHTML = TRUE,
+                    style = list(fontSize = "30px")
+                  )
+                ) %>% 
+                hc_size(height = 300)
+              )
+                      
+              
+          )
+        }
       }
-
       
       camera_panels <- foreach(i = 1:n_filtered_cameras) %do% {
         if(filtered_cameras$time_since_measurement[i] < 10){
