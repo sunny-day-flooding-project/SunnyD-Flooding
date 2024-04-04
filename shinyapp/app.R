@@ -1263,9 +1263,11 @@ server <- function(input, output, session) {
     }
     
     if(input$city_name != ""){
-      # Down East has sensors that are spread further apart than other locations so use a smaller zoom value
+      # Down East and Hawaii have sensors that are spread further apart than other locations so use a smaller zoom value
       # This should get moved into a database table if additional sites are added that need a different zoom level
       if (input$city_name == 'Down East, North Carolina') {
+        zoom <- 11
+      } else if (input$city_name == 'Hawaii') {
         zoom <- 11
       } else {
         zoom <- 16
