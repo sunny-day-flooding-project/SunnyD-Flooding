@@ -919,11 +919,13 @@ server <- function(input, output, session) {
   
   # Labels for sensor map 1 camera
   camera_locations_labels <- as.list(camera_locations$html_popups)
+
+  city_name_options <- unique(c(sensor_locations$place, camera_locations$place))
   
   updateSelectInput(session = session,
                     inputId = "city_name",
                     # label = h4("Location"),
-                    choices = c("",unique(sensor_locations$place)),
+                    choices = c("", city_name_options),
                     selected = NULL)
   
   
