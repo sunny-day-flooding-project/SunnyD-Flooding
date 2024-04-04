@@ -1233,12 +1233,23 @@ server <- function(input, output, session) {
     reactive_selection$overall_data_location <- input$city_name
     reactive_selection$overall_camera_location <- input$city_name
     
-    sensor_locations %>% 
-      filter(place == input$city_name) %>% 
-      sf::st_coordinates() %>% 
-      as_tibble() %>% 
-      summarise(lng = mean(X, na.rm=T),
-                lat = mean(Y, na.rm=T))
+    sensors = sensor_locations %>% 
+              filter(place == input$city_name)
+    if(nrow(sensors) > 0) {
+      sensor_locations %>% 
+        filter(place == input$city_name) %>% 
+        sf::st_coordinates() %>% 
+        as_tibble() %>% 
+        summarise(lng = mean(X, na.rm=T),
+                  lat = mean(Y, na.rm=T))
+    } else {
+      camera_locations %>% 
+        filter(place == input$city_name) %>% 
+        sf::st_coordinates() %>% 
+        as_tibble() %>% 
+        summarise(lng = mean(X, na.rm=T),
+                  lat = mean(Y, na.rm=T))
+    }
   })
   
   # If city name is selected on the map tab, fly to the location
