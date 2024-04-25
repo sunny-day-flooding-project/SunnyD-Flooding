@@ -860,6 +860,8 @@ server <- function(input, output, session) {
 
     sensor_labels <- con %>% 
                     tbl("sensor_surveys") %>% 
+                    group_by(sensor_ID) %>%
+                    filter(date_surveyed == max(date_surveyed, na.rm=T)) %>% 
                     select(sensor_ID, sensor_label) %>% 
                     distinct(sensor_ID, .keep_all = TRUE) %>% 
                     collect()
