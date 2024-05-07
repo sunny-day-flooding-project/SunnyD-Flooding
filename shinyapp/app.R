@@ -537,6 +537,7 @@ ui <- bs4Dash::dashboardPage(
                        tabPanel(
                          "Plot",
                          highchartOutput("site_level_ts", width = "100%"),
+                         p("* no water can be detected beneath sensor elevation line"),
                          hr(),
                          h4("Plot options"),
                          fluidRow(
@@ -1780,7 +1781,7 @@ server <- function(input, output, session) {
                         color="black",
                         width = 1,#6
                         zIndex = 1,
-                        label = list(text = "Sensor Elevation",
+                        label = list(text = "Sensor Elevation*",
                                      style = list( color = 'black', fontWeight = 'bold'))))) %>%
         hc_exporting(enabled = TRUE,
                      filename = paste0(plot_sensor_stats$sensor_ID,"_",min_date_plot %>% with_tz("America/New_York"),"_to_",max_date_plot %>% with_tz("America/New_York")),
