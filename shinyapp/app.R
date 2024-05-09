@@ -1689,6 +1689,13 @@ server <- function(input, output, session) {
       } else {
          y_axis_min <- NULL
       }
+
+      nan_threshold <- 1 / 6
+      if (input$elev_datum == "Road") {
+        x$road_water_level_adj[x$road_water_level_adj < sensor_elevation_limit + nan_threshold & x$road_water_level_adj > sensor_elevation_limit - nan_threshold] <- NaN
+      } else {
+        x$sensor_water_level_adj[x$sensor_water_level_adj < sensor_elevation_limit + nan_threshold & x$sensor_water_level_adj > sensor_elevation_limit - nan_threshold] <- NaN
+      }
       
       hc <- highchart() %>%
         hc_add_series(data = x %>% dplyr::select(date,"wl" = ifelse(input$elev_datum == "Road","road_water_level_adj","sensor_water_level_adj")),
