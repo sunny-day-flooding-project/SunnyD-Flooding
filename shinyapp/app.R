@@ -1468,7 +1468,7 @@ server <- function(input, output, session) {
 
   output$alt_thirdparty_info <- renderUI({
     alt_wl_metadata_collected <- alt_local_wl_metadata()
-    if(!is.na(alt_wl_metadata_collected$alt_wl_url)){
+    if(!is.na(alt_wl_metadata_collected$alt_wl_url) & isolate(alt_local_wl_metadata()$alt_wl_url) != ''){
       helpText("  Data source: ",a(href=alt_wl_metadata_collected$alt_wl_url,alt_wl_metadata_collected$alt_wl_src, target = "_blank", class = "pretty-link"))
     }
   })
@@ -1504,12 +1504,12 @@ server <- function(input, output, session) {
       shinyjs::enable(id = "view_3rdparty_data")
     }
 
-    if(is.na(isolate(alt_local_wl_metadata()$alt_wl_url))){
+    if(is.na(isolate(alt_local_wl_metadata()$alt_wl_url)) | isolate(alt_local_wl_metadata()$alt_wl_url) == ''){
       shinyjs::hide(id = "view_alt_3rdparty_data")
       shinyjs::disable(id = "view_alt_3rdparty_data")
     }
     
-    if(!is.na(isolate(alt_local_wl_metadata()$alt_wl_url))){
+    if(!is.na(isolate(alt_local_wl_metadata()$alt_wl_url)) & isolate(alt_local_wl_metadata()$alt_wl_url) != ''){
       shinyjs::show(id = "view_alt_3rdparty_data")
       shinyjs::enable(id = "view_alt_3rdparty_data")
     }
