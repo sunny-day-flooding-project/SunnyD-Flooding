@@ -1686,8 +1686,10 @@ server <- function(input, output, session) {
         y_axis_min <- ifelse(nrow(x)!=0,
                              c(ifelse(min(x$sensor_water_level_adj, na.rm=T) < reference_elevation_limit, min(x$sensor_water_level_adj, na.rm=T) , reference_elevation_limit - 0.25 )),
                              c(NA)) 
+      } else if (input$view_3rdparty_data == F & input$view_alt_3rdparty_data == F) {
+        y_axis_min <- sensor_elevation_limit - 1
       } else {
-         y_axis_min <- NULL
+        y_axis_min <- NULL
       }
 
       nan_threshold <- 1 / 6
