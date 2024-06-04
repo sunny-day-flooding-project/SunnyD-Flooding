@@ -1708,7 +1708,8 @@ server <- function(input, output, session) {
                       color="#1d1d75",
                       # Controls when points are shown on plot (only on zoom)
                       marker = list(
-                        enabledThreshold = 0.25
+                        # enabledThreshold = 0.25
+                        enabledThreshold = 0.8
                       ),
                       # zones = list(
                       #   list(
