@@ -597,6 +597,14 @@ ui <- bs4Dash::dashboardPage(
                             imageOutput(outputId = "guide", width = "100%")
                            )
                          )
+                       ),
+                       tabPanel(
+                        "Valve performance",
+                        fluidRow(
+                           column(width=12,
+                            htmlOutput('pdfviewer'),
+                           ),
+                        ),
                        )
                 )
                 
@@ -1404,6 +1412,14 @@ server <- function(input, output, session) {
     reactive_selection$overall_camera_choices <- choices
   })
   
+  # Only show Valve Performance info for Carolina Beach sites
+  observeEvent(input$data_location, {
+    if(grepl( 'Carolina Beach', input$data_location, fixed = TRUE)) {
+      showTab("data_tabs", "Valve performance")
+    } else {
+      hideTab("data_tabs", "Valve performance")
+    }
+  })
 
   observeEvent(input$m_marker_click,{
 
@@ -2231,6 +2247,14 @@ server <- function(input, output, session) {
       } else if (!is.null(query[['location']])) {
         delay(1000, updateSelectFromURL(query))
       }  
+  })
+
+  observe({
+    hideTab("data_tabs", "Valve performance")
+  })
+
+  output$pdfviewer <- renderText({
+      return(paste('<iframe style="height:600px; width:100%" src="20240724_ValvePerformance_guide.pdf"></iframe>', sep = ""))
   })
   
   waiter::waiter_hide()
