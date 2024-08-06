@@ -921,6 +921,7 @@ server <- function(input, output, session) {
   reference_elevations <- con %>%
     tbl("sensor_surveys") %>%
     group_by(sensor_ID) %>% 
+    filter(date_surveyed == max(date_surveyed, na.rm=T)) %>% 
     select(sensor_ID, reference_elevation, reference_elevation_type) %>%
     distinct() %>%
     collect()
