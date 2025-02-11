@@ -59,12 +59,10 @@ onStop(function() {
 })
 
 data_for_display <- con %>% 
-  tbl("data_for_display")  %>%
-  filter(sensor_ID != "BF_01")
+  tbl("data_for_display")  
 
 sensor_surveys <- con %>% 
-  tbl("sensor_surveys") %>%
-  filter(sensor_ID != "BF_01")
+  tbl("sensor_surveys") 
 
 local_water_levels <- con %>% 
   tbl("api_data") %>%
@@ -858,12 +856,10 @@ server <- function(input, output, session) {
   start.date <- Sys.Date() - 90
   tmp <- con %>% 
     tbl("data_for_display") %>%
-    filter(date > start.date)%>%
-    filter(sensor_ID != "BF_01")
+    filter(date > start.date)
   sensor_locations <- tmp %>%
                 group_by(sensor_ID) %>%
                 filter(date == max(date, na.rm=T)) %>%
-                filter(sensor_ID != "BF_01") %>% 
                 collect() %>% 
                 mutate(sensor_water_level = sensor_water_level_adj,
                        road_water_level = road_water_level_adj) %>% 
