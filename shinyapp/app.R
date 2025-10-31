@@ -1066,14 +1066,18 @@ server <- function(input, output, session) {
         filter(date == max(date, na.rm = T)) %>%
         mutate(
           above_alert_wl = sensor_water_level_adj >= alert_threshold,
+          above_road_elev = sensor_water_level_adj >= road_elevation,
           time_since_measurement = as.numeric(floor(difftime(current_time,date, unit = "mins"))),
           time_since_measurement_text = time_converter(time_since_measurement),
           is_comms_down = time_since_measurement >= 180,
           is_current = (time_since_measurement <= 40), #(min_interval + 10 + 10 + 3)
-          flood_status = ifelse(above_alert_wl & !is_current & !is_comms_down, "FLOODING", 
-                                ifelse(above_alert_wl & is_current, "WARNING", 
-                                       ifelse(!above_alert_wl & is_current, "NOT FLOODING",
-                                              "UNKNOWN"))) 
+          flood_status = ifelse(!above_alert_wl &  is_current & !is_comms_down &  above_road_elev, "FLOODING",
+                         ifelse( above_alert_wl & !is_current & !is_comms_down & !above_road_elev, "FLOODING",
+                         ifelse( above_alert_wl & !is_current & !is_comms_down &  above_road_elev, "FLOODING", 
+                         ifelse( above_alert_wl &  is_current & !is_comms_down &  above_road_elev, "FLOODING", 
+                         ifelse( above_alert_wl &  is_current & !is_comms_down & !above_road_elev, "WARNING", 
+                         ifelse(!above_alert_wl &  is_current & !is_comms_down & !above_road_elev, "NOT FLOODING",
+                         "UNKNOWN"))))))
         ) %>% 
         dplyr::select(sensor_ID, time_since_measurement, time_since_measurement_text, flood_status)
     )
@@ -1096,15 +1100,18 @@ server <- function(input, output, session) {
         filter(date == max(date, na.rm = T)) %>%
         mutate(
           above_alert_wl = sensor_water_level_adj >= alert_threshold,
+          above_road_elev = sensor_water_level_adj >= road_elevation,
           time_since_measurement = floor(difftime(current_time,date, unit = "mins")),
           time_since_measurement_text = time_converter(time_since_measurement),
           is_comms_down = time_since_measurement >= 180,
           is_current = (time_since_measurement <= 40), #(min_interval + 10 + 10 + 3)
-          flood_status = ifelse(above_alert_wl & !is_current & !is_comms_down, "FLOODING", 
-                                ifelse(above_alert_wl & is_current, "WARNING", 
-                                       ifelse(!above_alert_wl & is_current, "NOT FLOODING",
-                                              "UNKNOWN")))
-        )
+          flood_status = ifelse(!above_alert_wl &  is_current & !is_comms_down &  above_road_elev, "FLOODING",
+                         ifelse( above_alert_wl & !is_current & !is_comms_down & !above_road_elev, "FLOODING",
+                         ifelse( above_alert_wl & !is_current & !is_comms_down &  above_road_elev, "FLOODING", 
+                         ifelse( above_alert_wl &  is_current & !is_comms_down &  above_road_elev, "FLOODING", 
+                         ifelse( above_alert_wl &  is_current & !is_comms_down & !above_road_elev, "WARNING", 
+                         ifelse(!above_alert_wl &  is_current & !is_comms_down & !above_road_elev, "NOT FLOODING",
+                         "UNKNOWN"))))))        )
     )
   })
   
